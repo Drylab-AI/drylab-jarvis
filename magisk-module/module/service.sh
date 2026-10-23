@@ -33,10 +33,23 @@ pm grant "$APP" android.permission.POST_NOTIFICATIONS 2>>"$LOG"
 dumpsys deviceidle whitelist +"$APP" 2>>"$LOG"
 
 # Start the always-on, on-device "Jarvis" wake-word listener (openWakeWord).
-# The service stops itself if the user's wake toggle is off. Best-effort.
-am start-foreground-service -n "$APP/.WakeService" \
-    -a com.jarvis.voicerec.WAKE_START 2>>"$LOG" || \
-    am startforegroundservice -n "$APP/.WakeService" 2>>"$LOG" || true
+# The service stops itself if the user's wake toggle is off.
+#
+# This must wait for the user to be UNLOCKED: the app's settings (and its
+# code) live in credential-encrypted storage, so starting it earlier fails
+# silently. Retry in the background so boot is never held up.
+(
+    i=0
+    while [ "$i" -lt 60 ]; do
+        if am start-foreground-service -n "$APP/.WakeService" \
+                -a com.jarvis.voicerec.WAKE_START >/dev/null 2>&1; then
+            log "WakeService start requested"
+            break
+        fi
+        i=$((i + 1))
+        sleep 5
+    done
+) &
 
 # Keep volrecd running; restart with backoff if it dies.
 BIN="$MODDIR/volrecd"
