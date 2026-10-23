@@ -48,3 +48,11 @@ VLC live window. Second press stops; ffmpeg finalizes the mp4 + JSON sidecar.
 - Locked-screen use works during normal lock; NOT in Before-First-Unlock right
   after a reboot (no app can run until the first manual unlock).
 - Port 8787 (8765/8766 held by another local app).
+
+## Live window fix verified (2026-10-23, after HTTP-MJPEG switch)
+
+- GET /cam/live/<sid> served 80 JPEG frames (9.4 MB) in ~3 s from a live
+  back-camera stream; extracted frame is a valid 1080x1080 JPEG.
+- VLC auto-opened on the /cam/live URL and showed the feed (no more blank
+  window; the old UDP push had a join race + A/V timestamp stall).
+- Saved file 20261023T172333Z_Pixel-8-Pro_cam.mp4: H.264 1080x1080 + AAC, 14 MB.
