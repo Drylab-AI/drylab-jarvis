@@ -20,6 +20,21 @@ Status key: `pass`, `partial`, `fail`. Full results and evidence in
 | 10 | Kill switch file present | Volume Up changes volume again | pass |
 | 11 | Long recording (30 min, screen off) | file complete, upload works | partial (50 s proven) |
 
+## Volume Down: back-camera live stream (second feature)
+
+Status key: `pass`, `partial`, `fail`. Evidence in
+[cam-e2e-results.md](logs/cam-e2e-results.md).
+
+| # | Case | How to verify | Status |
+|---|------|---------------|--------|
+| C1 | Press Vol Down: camera starts, PC window opens, live video + audio | VLC window shows the back-camera feed | pass |
+| C2 | Second Vol Down: window closes, `<ts>_cam.mp4` saved and plays with audio | mp4 has H.264 1080x1080 + AAC | pass |
+| C3 | Vol Down no longer changes volume; Vol Up still records audio | daemon grabs both, logs distinct toggles | pass |
+| C4 | Reboot: daemon auto-starts, first Vol Down works | service.sh relaunches volrecd | pass |
+| C5 | Wi-Fi blip mid-stream: stream ends cleanly, partial mp4 finalized | frag_keyframe mp4 stays playable | partial (by design) |
+| C6 | Kill switch: both volume keys behave normally again | `/data/adb/volrec/disable` releases the grab | pass |
+| C7 | Camera start does not break the Vol Up audio path | both run from the same daemon | pass |
+
 ## Local (pre-phone) verification already done
 
 These prove the software independently of the phone:

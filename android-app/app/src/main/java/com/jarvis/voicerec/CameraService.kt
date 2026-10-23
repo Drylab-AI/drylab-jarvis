@@ -41,11 +41,11 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import okio.BufferedSink
 
 /**
- * Front-camera live-stream service. Volume Down toggles it through
+ * Back-camera live-stream service. Volume Down toggles it through
  * [CamToggleActivity].
  *
  * While streaming it:
- *  - runs CameraX on the FRONT camera with an ImageAnalysis use case, encodes
+ *  - runs CameraX on the BACK camera with an ImageAnalysis use case, encodes
  *    each frame to JPEG and pushes it to the PC as an MJPEG stream
  *    (POST /cam/video/<sid>, multipart/x-mixed-replace),
  *  - captures the mic with AudioRecord, encodes AAC and pushes it to the PC
@@ -195,13 +195,13 @@ class CameraService : LifecycleService() {
                 provider.unbindAll()
                 provider.bindToLifecycle(
                     this,
-                    CameraSelector.DEFAULT_FRONT_CAMERA,
+                    CameraSelector.DEFAULT_BACK_CAMERA,
                     analysis,
                 )
-                Log.i(TAG, "front camera bound")
+                Log.i(TAG, "back camera bound")
             } catch (e: Exception) {
                 Log.e(TAG, "camera start failed", e)
-                notifyError("Could not open front camera")
+                notifyError("Could not open back camera")
                 stopStreaming()
             }
         }, ContextCompat.getMainExecutor(this))
@@ -314,7 +314,12 @@ class CameraService : LifecycleService() {
                     var outIdx = codec.dequeueOutputBuffer(info, 0)
                     while (outIdx >= 0) {
                         val ob = codec.getOutputBuffer(outIdx)!!
-                        if (info.size > 0) {
+                        // Skip the codec-config (CSD/ESDS) buffer: it is not an
+                        // audio frame and wrapping it in ADTS corrupts the
+                        // stream (ffmpeg: "Input buffer exhausted").
+                        val isConfig =
+                            (info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG) != 0
+                        if (!isConfig && info.size > 0) {
                             val adts = ByteArray(7 + info.size)
                             addAdtsHeader(adts, info.size)
                             ob.position(info.offset)
@@ -478,7 +483,7 @@ class CameraService : LifecycleService() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         return Notification.Builder(this, CHANNEL_ID)
-            .setContentTitle("Streaming front camera")
+            .setContentTitle("Streaming back camera")
             .setContentText("Press Volume Down again to stop")
             .setSmallIcon(android.R.drawable.presence_video_online)
             .setOngoing(true)

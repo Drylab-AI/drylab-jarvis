@@ -26,6 +26,10 @@ log "boot complete, setting up"
 #  - whitelist from Doze so WorkManager uploads are not deferred for hours
 appops set "$APP" RECORD_AUDIO allow 2>>"$LOG"
 appops set "$APP" CAMERA allow 2>>"$LOG"
+# Runtime permissions too (appops alone is not enough for a camera/mic FGS).
+pm grant "$APP" android.permission.RECORD_AUDIO 2>>"$LOG"
+pm grant "$APP" android.permission.CAMERA 2>>"$LOG"
+pm grant "$APP" android.permission.POST_NOTIFICATIONS 2>>"$LOG"
 dumpsys deviceidle whitelist +"$APP" 2>>"$LOG"
 
 # Keep volrecd running; restart with backoff if it dies.

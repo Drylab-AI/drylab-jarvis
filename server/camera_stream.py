@@ -68,6 +68,7 @@ class CamSession:
         self.stopped = False
         self.ffmpeg: subprocess.Popen | None = None
         self.vlc: subprocess.Popen | None = None
+        self._ff_log = None
         self.audio_fifo: Path | None = None
         self.out_path: Path | None = None
         self.bytes_video = 0
@@ -94,7 +95,7 @@ class CamSession:
             self.started = True
 
             day_dir = _day_dir(self.recordings_dir)
-            self.out_path = day_dir / f"{self.sid}_{self.device}_front.mp4"
+            self.out_path = day_dir / f"{self.sid}_{self.device}_cam.mp4"
 
             # Audio FIFO: ffmpeg reads it as a second input. Create before launch.
             fifo_dir = Path("/tmp/jarvis_cam")
@@ -110,36 +111,58 @@ class CamSession:
                 self.audio_fifo = None
 
             cmd = [FFMPEG, "-hide_banner", "-loglevel", "warning", "-y",
-                   # Video from stdin (MJPEG).
-                   "-f", "mjpeg", "-use_wallclock_as_timestamps", "1", "-i", "pipe:0"]
+                   # Video from stdin (MJPEG). -r sets the assumed input rate so
+                   # timestamps are sane even though MJPEG carries none.
+                   "-f", "mjpeg", "-framerate", "15", "-thread_queue_size", "512",
+                   "-i", "pipe:0"]
             if self.audio_fifo is not None:
                 # Audio FIFO as a second input; -thread_queue_size avoids drops.
+                # Tolerate stream glitches and derive timestamps from arrival so
+                # a hiccup in the audio never aborts the whole mux.
                 cmd += ["-thread_queue_size", "512",
+                        "-use_wallclock_as_timestamps", "1",
+                        "-fflags", "+igndts+discardcorrupt",
+                        "-err_detect", "ignore_err",
                         "-f", "aac", "-i", str(self.audio_fifo)]
 
-            # Encode once; map to two outputs (file + udp) via tee.
+            # Explicit stream mapping is REQUIRED for the tee muxer (without it
+            # the tee outputs get no streams -> "Output file does not contain
+            # any stream").
+            cmd += ["-map", "0:v:0"]
+            if self.audio_fifo is not None:
+                cmd += ["-map", "1:a:0"]
+
+            # Encode video; fragmented mp4 (frag_keyframe+empty_moov) stays
+            # playable even if we are killed mid-stream.
             cmd += ["-c:v", "libx264", "-preset", "veryfast", "-tune", "zerolatency",
-                    "-pix_fmt", "yuv420p", "-r", "15"]
+                    "-pix_fmt", "yuv420p", "-r", "15", "-g", "30"]
             if self.audio_fifo is not None:
                 cmd += ["-c:a", "aac", "-b:a", "96k"]
 
             file_out = str(self.out_path)
+            frag = "movflags=frag_keyframe+empty_moov+default_base_moof"
             if LIVE_WINDOW:
-                # tee muxer: write mp4 and stream mpegts over UDP simultaneously.
+                # tee muxer: write a fragmented mp4 and stream mpegts over UDP.
                 tee = (
-                    f"[f=mp4]{file_out}|"
+                    f"[f=mp4:{frag}]{file_out}|"
                     f"[f=mpegts]udp://127.0.0.1:{self.udp_port}?pkt_size=1316"
                 )
                 cmd += ["-f", "tee", tee]
             else:
-                cmd += ["-f", "mp4", file_out]
+                cmd += ["-movflags", "frag_keyframe+empty_moov+default_base_moof",
+                        "-f", "mp4", file_out]
 
+            # Drain ffmpeg stderr to a per-session log so its pipe never fills
+            # (a full stderr pipe would block ffmpeg and freeze the stream).
+            log_dir = Path("/tmp/jarvis_cam")
+            log_dir.mkdir(parents=True, exist_ok=True)
+            self._ff_log = open(log_dir / f"{self.sid}.ffmpeg.log", "wb")
             try:
                 self.ffmpeg = subprocess.Popen(
                     cmd,
                     stdin=subprocess.PIPE,
                     stdout=subprocess.DEVNULL,
-                    stderr=subprocess.PIPE,
+                    stderr=self._ff_log,
                 )
             except Exception as exc:  # noqa: BLE001
                 self.started = False
@@ -315,6 +338,13 @@ class CamSession:
                 self.vlc.terminate()
             except Exception:  # noqa: BLE001
                 pass
+
+        # Close the ffmpeg stderr log.
+        try:
+            if self._ff_log:
+                self._ff_log.close()
+        except Exception:  # noqa: BLE001
+            pass
 
         # Clean up the FIFO.
         try:

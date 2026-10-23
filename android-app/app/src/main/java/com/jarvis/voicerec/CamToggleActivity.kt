@@ -8,7 +8,7 @@ import android.os.Handler
 import android.os.Looper
 
 /**
- * Invisible trampoline for the front-camera stream. The root daemon runs:
+ * Invisible trampoline for the back-camera stream. The root daemon runs:
  *   am start -n com.jarvis.voicerec/.CamToggleActivity -a com.jarvis.voicerec.CAM_TOGGLE --user 0
  *
  * Unlike the audio ToggleActivity, this one must be able to appear OVER the
