@@ -59,6 +59,9 @@ app = FastAPI(title="Jarvis upload server", version="0.1.0")
 # Front-camera live-stream sessions (Volume Down feature).
 cam_registry = CamRegistry(RECORDINGS_DIR)
 
+# Live assistant bridges, newest last. Used by the /assistant/say test hook.
+ACTIVE_BRIDGES: list = []
+
 
 def _safe_component(value: str, fallback: str) -> str:
     """Reduce a user-supplied string to a safe single path component.
@@ -275,6 +278,26 @@ img{{display:block;width:100vw;height:100vh;object-fit:contain}}</style>
     return HTMLResponse(html)
 
 
+@app.post("/assistant/say")
+async def assistant_say(
+    text: str = Form(...),
+    x_jarvis_token: str | None = Header(default=None),
+) -> JSONResponse:
+    """Debug/test only: inject a user turn as text into the live session.
+
+    Lets the assistant flow (tools, charts, replies) be driven automatically
+    without speaking into the phone. Returns 409 when no session is active.
+    """
+    _check_token(x_jarvis_token)
+    bridge = ACTIVE_BRIDGES[-1] if ACTIVE_BRIDGES else None
+    if bridge is None:
+        raise HTTPException(status_code=409, detail="no active assistant session")
+    ok = await bridge.inject_text(text)
+    if not ok:
+        raise HTTPException(status_code=409, detail="session not ready")
+    return JSONResponse({"ok": True, "sent": text})
+
+
 @app.websocket("/assistant/ws")
 async def assistant_ws(websocket: WebSocket) -> None:
     """Realtime voice-assistant bridge.
@@ -306,6 +329,7 @@ async def assistant_ws(websocket: WebSocket) -> None:
     bridge = GeminiLiveBridge(link, tools)
 
     # Run the Gemini session concurrently with the phone receive loop.
+    ACTIVE_BRIDGES.append(bridge)
     run_task = asyncio.create_task(bridge.run())
     try:
         while True:
@@ -335,6 +359,8 @@ async def assistant_ws(websocket: WebSocket) -> None:
     except Exception:  # noqa: BLE001
         pass
     finally:
+        if bridge in ACTIVE_BRIDGES:
+            ACTIVE_BRIDGES.remove(bridge)
         bridge.close()
         run_task.cancel()
         try:

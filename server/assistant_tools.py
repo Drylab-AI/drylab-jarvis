@@ -103,7 +103,13 @@ class ToolRouter:
             if name == "open_camera":
                 self.camera_on = True
                 await self.link.tool("open_camera")
-                return "camera turned on; frames incoming"
+                # The result text is what the model speaks from, so tell it to
+                # confirm out loud and keep listening.
+                return (
+                    "The camera is now open and you can see through it. "
+                    "Tell the user out loud that the camera is open, then keep "
+                    "listening for what they want you to do."
+                )
             if name == "close_camera":
                 self.camera_on = False
                 await self.link.tool("close_camera")
@@ -166,4 +172,8 @@ class ToolRouter:
             plt.close(fig)
 
         await self.link.show_image(png, caption=str(args.get("title", "chart")))
-        return "chart drawn and shown on the phone"
+        return (
+            f"The {chart_type} chart is drawn and is now showing on the user's "
+            "phone screen. Tell them it is on screen and briefly describe what "
+            "it shows."
+        )

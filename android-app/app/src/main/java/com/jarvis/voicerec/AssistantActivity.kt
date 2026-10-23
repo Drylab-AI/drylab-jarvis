@@ -66,11 +66,15 @@ class AssistantActivity : AppCompatActivity() {
             @Suppress("UnspecifiedRegisterReceiverFlag")
             registerReceiver(receiver, filter)
         }
-        // Start (or no-op if already running) the assistant service.
-        startForegroundService(
-            Intent(this, AssistantService::class.java)
-                .setAction(AssistantService.ACTION_START)
-        )
+        // Start the assistant service unless it is already running: a second
+        // ACTION_START would open another WebSocket and so a second Gemini
+        // session, which resets the conversation mid-turn.
+        if (!AssistantService.isRunning) {
+            startForegroundService(
+                Intent(this, AssistantService::class.java)
+                    .setAction(AssistantService.ACTION_START)
+            )
+        }
     }
 
     override fun onStop() {

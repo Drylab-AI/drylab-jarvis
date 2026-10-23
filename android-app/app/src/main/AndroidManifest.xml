@@ -7,6 +7,14 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Lets the wake word surface the assistant from the background. A
+         background service cannot call startActivity on Android 10+ (the
+         launch is BAL_BLOCKed), and a full-screen intent only takes over the
+         screen while it is locked. Holding the overlay permission ("Display
+         over other apps") restores the background-activity-launch exemption so
+         saying "hey jarvis" opens the assistant on an unlocked screen too. -->
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />

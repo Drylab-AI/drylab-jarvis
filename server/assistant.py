@@ -44,13 +44,19 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 SYSTEM_INSTRUCTION = os.environ.get(
     "JARVIS_SYSTEM_PROMPT",
     "You are Jarvis, a concise, friendly voice assistant running on the user's "
-    "phone. Keep spoken replies short and natural. You can see through the "
-    "phone camera when it is on. You have tools to open/close the camera, "
-    "start/stop audio recording, draw a chart, and show an image on the phone "
-    "screen. When the user asks you to visualise data or 'draw a chart', call "
-    "the draw_chart tool. When you want to show the user a picture, call "
-    "show_image. Only turn the camera on when you actually need to see "
-    "something, and turn it off when done.",
+    "phone. Keep spoken replies short and natural, one or two sentences. "
+    "After finishing a reply, keep listening; the conversation stays open.\n"
+    "You can see through the phone camera when it is on, and you have tools "
+    "to open/close the camera, start/stop audio recording and draw a chart.\n"
+    "Rules:\n"
+    "- When the user asks you to look at something or open the camera, call "
+    "open_camera, then say out loud that the camera is open.\n"
+    "- When the user asks for a chart or graph of what the camera sees, read "
+    "the numbers or data points from the camera image and call draw_chart with "
+    "chart_type (bar, line, pie or scatter), the values, and labels when you "
+    "can read them. Say you are working on it first, then call the tool. If "
+    "the image is unclear, say what you can see and ask one short question.\n"
+    "- Turn the camera off with close_camera when it is no longer needed.",
 )
 
 
@@ -166,6 +172,7 @@ class GeminiLiveBridge:
         config = self._build_config(types)
 
         await self.link.state("connecting")
+        first_connect = True
         # Reconnect loop: survive the ~10 min socket reset via session
         # resumption. _closed is set when the phone disconnects.
         while not self._closed:
@@ -179,6 +186,12 @@ class GeminiLiveBridge:
                 ) as session:
                     self._session = session
                     await self.link.state("listening")
+                    # Greet first so the user hears that Jarvis is ready
+                    # instead of an open mic. Only on a fresh session: after a
+                    # resumed reconnect the conversation is already going.
+                    if first_connect:
+                        first_connect = False
+                        await self._greet(types, session)
                     # Run the two pumps alongside the receive loop. When
                     # _receive returns (GoAway / stream end) we cancel the
                     # pumps so this connection tears down and the outer loop
@@ -234,6 +247,45 @@ class GeminiLiveBridge:
             ),
         )
 
+    async def _greet(self, types: Any, session: Any) -> None:
+        """Make Jarvis speak first and ask what the user wants.
+
+        Sent as realtime text input: send_client_content would mix
+        turn-structured content into a live audio session, which this
+        native-audio model rejects with "1007 ... CONTENT_TYPE_AUDIO is not
+        supported for this model configuration" and then drops the socket.
+        """
+        prompt = os.environ.get(
+            "JARVIS_GREETING",
+            "The user just opened you. Greet them in one short sentence and "
+            "ask what they would like to do. Do not call any tools yet.",
+        )
+        try:
+            await session.send_realtime_input(text=prompt)
+        except Exception as exc:  # noqa: BLE001
+            print(f"greeting failed: {exc}")
+
+    async def inject_text(self, text: str) -> bool:
+        """Debug/test only: send a user turn as text into the live session.
+
+        Used by POST /assistant/say so the flow can be driven automatically
+        without speaking. Returns False when no session is connected yet.
+        """
+        session = self._session
+        if session is None:
+            return False
+        try:
+            # Must be realtime input, not send_client_content: mixing
+            # turn-structured content with a live audio stream makes the
+            # native-audio model close the socket with
+            # "1007 ... CONTENT_TYPE_AUDIO is not supported for this model
+            # configuration", which drops the whole conversation.
+            await session.send_realtime_input(text=text)
+            return True
+        except Exception as exc:  # noqa: BLE001
+            print(f"inject_text failed: {exc}")
+            return False
+
     async def _pump_mic(self) -> None:
         from google.genai import types
 
@@ -288,12 +340,18 @@ class GeminiLiveBridge:
                 in_tx = getattr(sc, "input_transcription", None)
                 if in_tx and getattr(in_tx, "text", None):
                     await self.link.transcript("you", in_tx.text)
-                # Inline images from the model turn (e.g. a chart).
+                # Inline IMAGES from the model turn (e.g. a generated chart).
+                # Note: on native-audio models the spoken reply also arrives as
+                # inline_data (audio/pcm), so the mime type must be checked or
+                # every audio chunk would pop up as a bogus image.
                 model_turn = getattr(sc, "model_turn", None)
                 if model_turn:
                     for part in getattr(model_turn, "parts", []) or []:
                         inline = getattr(part, "inline_data", None)
-                        if inline and getattr(inline, "data", None):
+                        if not inline or not getattr(inline, "data", None):
+                            continue
+                        mime = (getattr(inline, "mime_type", "") or "").lower()
+                        if mime.startswith("image/"):
                             await self.link.show_image(inline.data)
                 if getattr(sc, "turn_complete", False):
                     await self.link.state("listening")

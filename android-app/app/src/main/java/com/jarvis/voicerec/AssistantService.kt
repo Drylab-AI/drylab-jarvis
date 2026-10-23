@@ -92,6 +92,7 @@ class AssistantService : LifecycleService() {
     @Volatile private var lastFrameMs = 0L
 
     private var wakeLock: PowerManager.WakeLock? = null
+    private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         super.onStartCommand(intent, flags, startId)
@@ -169,6 +170,13 @@ class AssistantService : LifecycleService() {
     }
 
     private fun onTool(action: String) {
+        Log.i(TAG, "tool from server: $action")
+        // Control messages arrive on the OkHttp reader thread, but CameraX
+        // binding and startForeground must run on the main thread.
+        mainHandler.post { onToolMain(action) }
+    }
+
+    private fun onToolMain(action: String) {
         when (action) {
             "open_camera" -> startCamera()
             "close_camera" -> stopCamera()
@@ -299,6 +307,7 @@ class AssistantService : LifecycleService() {
             try {
                 val provider = future.get()
                 cameraProvider = provider
+                Log.i(TAG, "binding back camera for the assistant")
                 val analysis = ImageAnalysis.Builder()
                     .setTargetResolution(Size(CAM_W, CAM_H))
                     .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
