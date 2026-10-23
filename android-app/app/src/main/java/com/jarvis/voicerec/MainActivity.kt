@@ -64,22 +64,19 @@ class MainActivity : AppCompatActivity() {
             )
         }
 
-        b.picovoiceKey.setText(Prefs.picovoiceKey(this))
+        // On-device "Jarvis" wake word (free openWakeWord, no key needed).
         b.wakeToggle.isChecked = Prefs.wakeEnabled(this)
-
-        b.saveWake.setOnClickListener {
-            Prefs.setPicovoiceKey(this, b.picovoiceKey.text.toString())
-            toast("Key saved")
-        }
-
         b.wakeToggle.setOnCheckedChangeListener { _, on ->
             Prefs.setWakeEnabled(this, on)
-            ensurePermissions()
-            val intent = Intent(this, WakeService::class.java).setAction(
-                if (on) WakeService.ACTION_START else WakeService.ACTION_STOP
-            )
-            if (on) startForegroundService(intent) else startService(intent)
-            toast(if (on) "Wake word on" else "Wake word off")
+            val intent = Intent(this, WakeService::class.java)
+            if (on) {
+                // The service retries until RECORD_AUDIO is granted.
+                ensurePermissions()
+                startForegroundService(intent.setAction(WakeService.ACTION_START))
+            } else {
+                stopService(intent)
+            }
+            toast(if (on) "Say \"Jarvis\" to talk" else "Wake word off")
         }
 
         observeUploads()

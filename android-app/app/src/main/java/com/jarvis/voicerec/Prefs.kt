@@ -6,7 +6,6 @@ import android.content.Context
 object Prefs {
     private const val FILE = "jarvis_prefs"
     private const val KEY_SERVER_URL = "server_url"
-    private const val KEY_PICOVOICE_KEY = "picovoice_key"
     private const val KEY_WAKE_ENABLED = "wake_enabled"
 
     /**
@@ -27,16 +26,7 @@ object Prefs {
             .apply()
     }
 
-    /** Picovoice access key for the "Jarvis" wake word. Empty -> wake disabled. */
-    fun picovoiceKey(ctx: Context): String =
-        ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE)
-            .getString(KEY_PICOVOICE_KEY, "") ?: ""
-
-    fun setPicovoiceKey(ctx: Context, key: String) {
-        ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE)
-            .edit().putString(KEY_PICOVOICE_KEY, key.trim()).apply()
-    }
-
+    /** Whether the on-device "Jarvis" wake word (WakeService) should run. */
     fun wakeEnabled(ctx: Context): Boolean =
         ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE)
             .getBoolean(KEY_WAKE_ENABLED, false)

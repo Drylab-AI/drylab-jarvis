@@ -13,6 +13,12 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "0.1.0"
+
+        // Pixel 8 Pro is arm64 only. ONNX Runtime ships ~35-40 MB of native
+        // code per ABI, so packaging the other three would add ~100 MB.
+        ndk {
+            abiFilters += "arm64-v8a"
+        }
     }
 
     buildTypes {
@@ -34,6 +40,10 @@ android {
     }
     buildFeatures {
         viewBinding = true
+    }
+    // Keep the wake-word models uncompressed in the APK so they load fast.
+    androidResources {
+        noCompress += "onnx"
     }
 }
 
@@ -58,7 +68,8 @@ dependencies {
     implementation("androidx.camera:camera-camera2:1.3.4")
     implementation("androidx.camera:camera-lifecycle:1.3.4")
 
-    // Porcupine wake-word engine ("Jarvis"). Needs a free Picovoice access key
-    // set in Prefs; the WakeService degrades gracefully if the key is absent.
-    implementation("ai.picovoice:porcupine-android:3.0.2")
+    // ONNX Runtime runs the openWakeWord models (assets/oww/) on-device for the
+    // free "Jarvis" wake word. Replaces Picovoice Porcupine, whose free tier
+    // ended June 2026. No account, key or expiry.
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.31.0")
 }

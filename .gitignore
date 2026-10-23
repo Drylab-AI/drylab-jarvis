@@ -24,6 +24,11 @@ android-app/local.properties
 *.aab
 *.keystore
 
+# openWakeWord JVM verification harness build outputs
+tools/oww/kt-check/.gradle/
+tools/oww/kt-check/build/
+tools/oww/kt-check/.kotlin/
+
 # Magisk module build artifacts
 magisk-module/build/
 magisk-module/*.zip
