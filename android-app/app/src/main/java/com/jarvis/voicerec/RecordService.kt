@@ -152,6 +152,18 @@ class RecordService : Service() {
                 durationMs = durationMs,
             )
             Log.i(TAG, "queued upload ${file.name} (${file.length()} bytes)")
+            // Optional: open the assistant to ask what to do with the clip.
+            if (Prefs.autoAskAfterRecording(this)) {
+                try {
+                    startActivity(
+                        Intent(this, AssistantActivity::class.java)
+                            .setAction("com.jarvis.voicerec.ASSISTANT")
+                            .putExtra("seed", "I just finished an audio recording. Ask me what I'd like to do with it.")
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    )
+                } catch (_: Exception) {
+                }
+            }
         } else {
             file?.delete()
             notifyError("Recording too short or failed")

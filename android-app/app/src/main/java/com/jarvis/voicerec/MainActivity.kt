@@ -55,6 +55,33 @@ class MainActivity : AppCompatActivity() {
             startForegroundService(svc)
         }
 
+        // --- voice assistant ---
+        b.assistantButton.setOnClickListener {
+            ensurePermissions()
+            startActivity(
+                Intent(this, AssistantActivity::class.java)
+                    .setAction("com.jarvis.voicerec.ASSISTANT")
+            )
+        }
+
+        b.picovoiceKey.setText(Prefs.picovoiceKey(this))
+        b.wakeToggle.isChecked = Prefs.wakeEnabled(this)
+
+        b.saveWake.setOnClickListener {
+            Prefs.setPicovoiceKey(this, b.picovoiceKey.text.toString())
+            toast("Key saved")
+        }
+
+        b.wakeToggle.setOnCheckedChangeListener { _, on ->
+            Prefs.setWakeEnabled(this, on)
+            ensurePermissions()
+            val intent = Intent(this, WakeService::class.java).setAction(
+                if (on) WakeService.ACTION_START else WakeService.ACTION_STOP
+            )
+            if (on) startForegroundService(intent) else startService(intent)
+            toast(if (on) "Wake word on" else "Wake word off")
+        }
+
         observeUploads()
     }
 

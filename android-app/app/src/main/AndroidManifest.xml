@@ -82,5 +82,33 @@
             android:exported="false"
             android:foregroundServiceType="camera|microphone" />
 
+        <!-- Voice AI assistant: full-screen UI (works over the lock screen)
+             driven by the root daemon / wake word, backed by a mic+camera
+             foreground service that bridges to the PC over a WebSocket. -->
+        <activity
+            android:name=".AssistantActivity"
+            android:exported="true"
+            android:excludeFromRecents="false"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.JarvisVoiceRec">
+            <intent-filter>
+                <action android:name="com.jarvis.voicerec.ASSISTANT" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
+        <service
+            android:name=".AssistantService"
+            android:exported="false"
+            android:foregroundServiceType="camera|microphone" />
+
+        <!-- Always-on "Jarvis" wake-word listener. -->
+        <service
+            android:name=".WakeService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
+
     </application>
 </manifest>

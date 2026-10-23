@@ -32,6 +32,12 @@ pm grant "$APP" android.permission.CAMERA 2>>"$LOG"
 pm grant "$APP" android.permission.POST_NOTIFICATIONS 2>>"$LOG"
 dumpsys deviceidle whitelist +"$APP" 2>>"$LOG"
 
+# Start the always-on "Jarvis" wake-word listener if the user enabled it
+# (it no-ops without a Picovoice key). Best-effort; ignore failures.
+am start-foreground-service -n "$APP/.WakeService" \
+    -a com.jarvis.voicerec.WAKE_START 2>>"$LOG" || \
+    am startforegroundservice -n "$APP/.WakeService" 2>>"$LOG" || true
+
 # Keep volrecd running; restart with backoff if it dies.
 BIN="$MODDIR/volrecd"
 chmod 0755 "$BIN" 2>/dev/null

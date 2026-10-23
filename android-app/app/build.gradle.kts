@@ -53,8 +53,12 @@ dependencies {
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 
-    // CameraX for the front-camera stream
+    // CameraX for the camera stream
     implementation("androidx.camera:camera-core:1.3.4")
     implementation("androidx.camera:camera-camera2:1.3.4")
     implementation("androidx.camera:camera-lifecycle:1.3.4")
+
+    // Porcupine wake-word engine ("Jarvis"). Needs a free Picovoice access key
+    // set in Prefs; the WakeService degrades gracefully if the key is absent.
+    implementation("ai.picovoice:porcupine-android:3.0.2")
 }

@@ -6,6 +6,8 @@ import android.content.Context
 object Prefs {
     private const val FILE = "jarvis_prefs"
     private const val KEY_SERVER_URL = "server_url"
+    private const val KEY_PICOVOICE_KEY = "picovoice_key"
+    private const val KEY_WAKE_ENABLED = "wake_enabled"
 
     /**
      * Default points at this PC's LAN IP. Port 8787 is used because ports
@@ -23,5 +25,36 @@ object Prefs {
             .edit()
             .putString(KEY_SERVER_URL, url.trim().trimEnd('/'))
             .apply()
+    }
+
+    /** Picovoice access key for the "Jarvis" wake word. Empty -> wake disabled. */
+    fun picovoiceKey(ctx: Context): String =
+        ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+            .getString(KEY_PICOVOICE_KEY, "") ?: ""
+
+    fun setPicovoiceKey(ctx: Context, key: String) {
+        ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+            .edit().putString(KEY_PICOVOICE_KEY, key.trim()).apply()
+    }
+
+    fun wakeEnabled(ctx: Context): Boolean =
+        ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+            .getBoolean(KEY_WAKE_ENABLED, false)
+
+    fun setWakeEnabled(ctx: Context, on: Boolean) {
+        ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+            .edit().putBoolean(KEY_WAKE_ENABLED, on).apply()
+    }
+
+    private const val KEY_AUTO_ASK = "auto_ask_after_recording"
+
+    /** After a Volume-Up recording, open the assistant to ask what to do. */
+    fun autoAskAfterRecording(ctx: Context): Boolean =
+        ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+            .getBoolean(KEY_AUTO_ASK, false)
+
+    fun setAutoAskAfterRecording(ctx: Context, on: Boolean) {
+        ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+            .edit().putBoolean(KEY_AUTO_ASK, on).apply()
     }
 }

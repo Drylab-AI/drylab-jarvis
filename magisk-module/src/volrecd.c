@@ -6,11 +6,9 @@
 //   3. Grabs the real node exclusively with EVIOCGRAB, so Android never sees
 //      Volume Up or Volume Down. Every OTHER key (Power, ...) is forwarded to
 //      Android through the uinput device, so those still work.
-//   4. On a Volume Up *press* (value==1), debounced to 400 ms and ignoring
-//      auto-repeat, it runs:
-//        am start -n com.jarvis.voicerec/.ToggleActivity \
-//                 -a com.jarvis.voicerec.TOGGLE --user 0
-//      which toggles the audio recording in the app.
+//   4. Volume Up: a short TAP toggles the audio recorder (ToggleActivity);
+//      HOLDING it >= LONGPRESS_MS opens the voice assistant
+//      (AssistantActivity). Both go through `am start`.
 //   5. On a Volume Down *press* (same debounce), it runs:
 //        am start -n com.jarvis.voicerec/.CamToggleActivity \
 //                 -a com.jarvis.voicerec.CAM_TOGGLE --user 0
@@ -45,6 +43,9 @@
 #define LOG_MAX_BYTES (1024 * 1024)
 
 #define DEBOUNCE_MS 400
+// Hold Volume Up at least this long to open the voice assistant (vs a short
+// tap, which toggles the audio recorder).
+#define LONGPRESS_MS 600
 
 // Bit helpers for the EVIOCGBIT key bitmap.
 #define BITS_PER_LONG (sizeof(long) * 8)
@@ -274,8 +275,11 @@ int main(void) {
     }
 
     int grabbed = 0;
-    long long last_toggle = 0;      // Volume Up (audio recorder)
-    long long last_cam_toggle = 0;  // Volume Down (front-camera stream)
+    long long last_toggle = 0;      // Volume Up short press (audio recorder)
+    long long last_cam_toggle = 0;  // Volume Down (camera stream)
+    long long last_assist = 0;      // Volume Up long press (voice assistant)
+    long long volup_press_ms = 0;   // when Volume Up went down (0 = up)
+    int volup_longfired = 0;        // assistant already fired for this hold
 
     while (!g_stop) {
         // Honour the kill switch: ungrab + forward both volume keys when
@@ -318,16 +322,38 @@ int main(void) {
 
         if (ev.type == EV_KEY && ev.code == KEY_VOLUMEUP) {
             // value: 1 = press, 0 = release, 2 = auto-repeat.
+            // Short tap  -> audio recorder toggle (fired on release).
+            // Long press -> open the voice assistant (fired mid-hold).
+            long long t = now_ms();
             if (ev.value == 1) {
-                long long t = now_ms();
-                if (t - last_toggle >= DEBOUNCE_MS) {
+                volup_press_ms = t;
+                volup_longfired = 0;
+            } else if (ev.value == 2) {
+                // Still held: once past the long-press threshold, open Jarvis.
+                if (!volup_longfired && volup_press_ms &&
+                    t - volup_press_ms >= LONGPRESS_MS &&
+                    t - last_assist >= DEBOUNCE_MS) {
+                    volup_longfired = 1;
+                    last_assist = t;
+                    log_msg("Volume Up long press -> assistant");
+                    trigger("com.jarvis.voicerec/.AssistantActivity",
+                            "com.jarvis.voicerec.ASSISTANT");
+                }
+            } else if (ev.value == 0) {
+                // Released. If it was a short tap (not a long press), toggle
+                // the audio recorder.
+                if (!volup_longfired && volup_press_ms &&
+                    t - volup_press_ms < LONGPRESS_MS &&
+                    t - last_toggle >= DEBOUNCE_MS) {
                     last_toggle = t;
-                    log_msg("Volume Up press -> toggle");
+                    log_msg("Volume Up tap -> toggle");
                     trigger("com.jarvis.voicerec/.ToggleActivity",
                             "com.jarvis.voicerec.TOGGLE");
                 }
+                volup_press_ms = 0;
+                volup_longfired = 0;
             }
-            // Swallow all Volume Up events (press/release/repeat): do NOT emit.
+            // Swallow all Volume Up events: do NOT emit.
             continue;
         }
 
