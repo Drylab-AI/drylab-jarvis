@@ -1,0 +1,37 @@
+# Recordings and uploaded clips (runtime data, can be large)
+recordings/
+*.m4a
+*.m4a.json
+
+# Firmware images and factory zips (very large, device-specific; keep locally)
+firmware/
+*.img
+*.zip
+
+# Python / uv
+server/.venv/
+__pycache__/
+*.pyc
+.uv/
+
+# Android build outputs
+android-app/.gradle/
+android-app/build/
+android-app/app/build/
+android-app/local.properties
+*.apk
+*.aab
+*.keystore
+
+# Magisk module build artifacts
+magisk-module/build/
+magisk-module/*.zip
+
+# Test run logs (proof lives under tests/, but keep heavy raw logs out)
+tests/logs/toolchain/
+tests/logs/server-test.log
+
+# Editor / OS
+.DS_Store
+*.swp
+.idea/
