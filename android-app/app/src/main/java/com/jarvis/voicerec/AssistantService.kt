@@ -293,6 +293,7 @@ class AssistantService : LifecycleService() {
             return
         }
         cameraOn = true
+        promoteToCamera()
         val future = ProcessCameraProvider.getInstance(this)
         future.addListener({
             try {
@@ -336,6 +337,7 @@ class AssistantService : LifecycleService() {
         cameraOn = false
         try { cameraProvider?.unbindAll() } catch (_: Exception) {}
         cameraProvider = null
+        demoteFromCamera()
         emit("""{"type":"camera","on":false}""")
     }
 
@@ -373,13 +375,40 @@ class AssistantService : LifecycleService() {
     }
 
     private fun startForegroundCompat() {
+        // Start as MICROPHONE-only. Camera type is added later (promoteToCamera)
+        // only when the camera is actually turned on, and only if CAMERA is
+        // granted - starting a camera-typed FGS without the permission throws.
         val n = buildNotification()
-        val type = ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE or
-            ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(NOTIF_ID, n, type)
+            startForeground(NOTIF_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
         } else {
             startForeground(NOTIF_ID, n)
+        }
+    }
+
+    private fun promoteToCamera() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
+        try {
+            startForeground(
+                NOTIF_ID,
+                buildNotification(),
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE or
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA,
+            )
+        } catch (e: Exception) {
+            Log.w(TAG, "could not promote FGS to camera: ${e.message}")
+        }
+    }
+
+    private fun demoteFromCamera() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
+        try {
+            startForeground(
+                NOTIF_ID,
+                buildNotification(),
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE,
+            )
+        } catch (_: Exception) {
         }
     }
 

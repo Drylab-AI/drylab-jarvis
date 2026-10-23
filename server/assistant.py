@@ -179,11 +179,20 @@ class GeminiLiveBridge:
                 ) as session:
                     self._session = session
                     await self.link.state("listening")
-                    await asyncio.gather(
-                        self._pump_mic(),
-                        self._pump_cam(),
-                        self._receive(types),
-                    )
+                    # Run the two pumps alongside the receive loop. When
+                    # _receive returns (GoAway / stream end) we cancel the
+                    # pumps so this connection tears down and the outer loop
+                    # reconnects (with the latest resume handle).
+                    mic_task = asyncio.create_task(self._pump_mic())
+                    cam_task = asyncio.create_task(self._pump_cam())
+                    try:
+                        await self._receive(types)
+                    finally:
+                        for t in (mic_task, cam_task):
+                            t.cancel()
+                        await asyncio.gather(
+                            mic_task, cam_task, return_exceptions=True
+                        )
             except asyncio.CancelledError:
                 raise
             except Exception as exc:  # noqa: BLE001

@@ -66,15 +66,38 @@ class WakeService : LifecycleService() {
             return
         }
         startListening(key)
+        // Always run the guard loop so that if the assistant is started by any
+        // path (wake word, Volume-Up long-press, or the in-app button) we
+        // release the mic, and resume listening once it ends.
+        startGuardLoop()
+    }
+
+    /**
+     * Continuously reconcile mic ownership: Porcupine must NOT hold the mic
+     * while AssistantService is running (any trigger path), and should resume
+     * when the assistant is idle.
+     */
+    private fun startGuardLoop() {
+        handler.postDelayed(object : Runnable {
+            override fun run() {
+                if (!isRunning) return
+                val key = Prefs.picovoiceKey(this@WakeService)
+                if (key.isNotBlank()) {
+                    if (AssistantService.isRunning) {
+                        if (manager != null) stopListening()
+                    } else {
+                        if (manager == null) startListening(key)
+                    }
+                }
+                handler.postDelayed(this, 1500)
+            }
+        }, 1500)
     }
 
     private fun startListening(accessKey: String) {
         if (manager != null) return
-        // Don't listen while the assistant owns the mic.
-        if (AssistantService.isRunning) {
-            scheduleResume()
-            return
-        }
+        // Don't listen while the assistant owns the mic (guard loop retries).
+        if (AssistantService.isRunning) return
         try {
             manager = PorcupineManager.Builder()
                 .setAccessKey(accessKey)
@@ -92,29 +115,14 @@ class WakeService : LifecycleService() {
 
     private fun onWake() {
         Log.i(TAG, "wake word detected")
-        stopListening() // release the mic for the assistant
+        stopListening() // release the mic for the assistant immediately
         Vibrate.once(this)
         startActivity(
             Intent(this, AssistantActivity::class.java)
                 .setAction("com.jarvis.voicerec.ASSISTANT")
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         )
-        scheduleResume()
-    }
-
-    /** Poll until the assistant finishes, then resume wake listening. */
-    private fun scheduleResume() {
-        handler.postDelayed(object : Runnable {
-            override fun run() {
-                if (!isRunning) return
-                if (AssistantService.isRunning) {
-                    handler.postDelayed(this, 2000)
-                } else {
-                    val key = Prefs.picovoiceKey(this@WakeService)
-                    if (key.isNotBlank()) startListening(key)
-                }
-            }
-        }, 2000)
+        // The guard loop resumes listening once the assistant ends.
     }
 
     private fun stopListening() {
