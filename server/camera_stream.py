@@ -25,7 +25,7 @@ import os
 import queue
 import re
 import shutil
-import socket
+import signal
 import subprocess
 import threading
 import time
@@ -33,7 +33,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 FFMPEG = os.environ.get("JARVIS_FFMPEG", shutil.which("ffmpeg") or "ffmpeg")
-# VLC is used only for the live window; optional.
+# The live window is a browser tab (renders multipart MJPEG in an <img>
+# reliably, unlike VLC). Prefer Chrome's app mode; fall back to xdg-open/VLC.
+BROWSER = os.environ.get(
+    "JARVIS_BROWSER",
+    shutil.which("google-chrome") or shutil.which("chromium") or "",
+)
 VLC = os.environ.get("JARVIS_VLC", shutil.which("vlc") or "/snap/bin/vlc")
 # Base UDP port for the live window; each session uses UDP_BASE + slot.
 UDP_BASE = int(os.environ.get("JARVIS_UDP_BASE", "9100"))
@@ -230,18 +235,12 @@ class CamSession:
             pass
 
     def _open_window(self) -> None:
-        """Best-effort live window: VLC opens the server's HTTP MJPEG stream.
-
-        The server re-serves the latest JPEG frames at
-        http://127.0.0.1:<port>/cam/live/<sid>, so VLC (or a browser) can
-        attach at any time and immediately see the current frame - no UDP/TCP
-        join race. We wait until at least one frame has arrived before
-        launching the window."""
-        if not VLC or not Path(VLC).exists():
-            return
+        """Best-effort live window: open a browser tab on the server's viewer
+        page, which shows the MJPEG stream in an <img> (browsers render
+        multipart/x-mixed-replace reliably; VLC does not). We wait for the
+        first frame so the window does not open on an empty stream."""
 
         def _launch():
-            # Wait for the first frame so VLC does not open on an empty stream.
             for _ in range(50):
                 if self.stopped:
                     return
@@ -249,14 +248,28 @@ class CamSession:
                     break
                 time.sleep(0.2)
             port = int(os.environ.get("JARVIS_PORT", "8787"))
-            url = f"http://127.0.0.1:{port}/cam/live/{self.sid}"
+            url = f"http://127.0.0.1:{port}/cam/view/{self.sid}"
             try:
-                self.vlc = subprocess.Popen(
-                    [VLC, "--no-video-title-show", "--network-caching=300",
-                     "--meta-title", f"Jarvis cam {self.sid}", url],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
+                if BROWSER:
+                    # App mode = a clean dedicated window, no tabs/omnibox. Own
+                    # process group + user-data-dir so we can close just this
+                    # window on stop without touching the user's other Chrome.
+                    self.vlc = subprocess.Popen(
+                        [BROWSER, f"--app={url}",
+                         "--window-size=720,720",
+                         "--no-first-run", "--no-default-browser-check",
+                         f"--user-data-dir=/tmp/jarvis_cam/chrome-{self.sid}"],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        start_new_session=True,
+                    )
+                elif VLC and Path(VLC).exists():
+                    self.vlc = subprocess.Popen(
+                        [VLC, "--no-video-title-show",
+                         f"http://127.0.0.1:{port}/cam/live/{self.sid}"],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
             except Exception:  # noqa: BLE001
                 self.vlc = None
         threading.Thread(target=_launch, daemon=True).start()
@@ -353,12 +366,25 @@ class CamSession:
                 except Exception:  # noqa: BLE001
                     ff.kill()
 
-        # Close the live window.
+        # Close the live window. Chrome in --app mode forks a detached process
+        # tree, so terminating the launcher is not enough; match this session's
+        # unique --user-data-dir and kill those processes. Falls back to the
+        # launcher handle for the VLC path.
+        chrome_profile = f"/tmp/jarvis_cam/chrome-{self.sid}"
+        try:
+            subprocess.run(["pkill", "-f", chrome_profile],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                           timeout=5)
+        except Exception:  # noqa: BLE001
+            pass
         if self.vlc:
             try:
-                self.vlc.terminate()
+                os.killpg(os.getpgid(self.vlc.pid), signal.SIGTERM)
             except Exception:  # noqa: BLE001
-                pass
+                try:
+                    self.vlc.terminate()
+                except Exception:  # noqa: BLE001
+                    pass
 
         # Close the ffmpeg stderr log.
         try:

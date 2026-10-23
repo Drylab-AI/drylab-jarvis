@@ -244,6 +244,25 @@ def cam_stop(
     return JSONResponse(meta)
 
 
+@app.get("/cam/view/{sid}")
+def cam_view(sid: str):
+    """A tiny HTML page that shows the live MJPEG stream in an <img>.
+
+    Browsers render multipart/x-mixed-replace in an <img> tag natively and
+    reliably (unlike VLC), so this is the live window we open."""
+    from fastapi.responses import HTMLResponse
+
+    safe = re.sub(r"[^A-Za-z0-9._-]", "", sid)[:64]
+    html = f"""<!doctype html><html><head><meta charset="utf-8">
+<title>Jarvis cam {safe}</title>
+<style>html,body{{margin:0;background:#000;height:100%}}
+img{{display:block;width:100vw;height:100vh;object-fit:contain}}</style>
+</head><body>
+<img src="/cam/live/{safe}" alt="live camera">
+</body></html>"""
+    return HTMLResponse(html)
+
+
 @app.get("/cam/live/{sid}")
 async def cam_live(sid: str) -> StreamingResponse:
     """Serve the live view as an MJPEG stream (multipart/x-mixed-replace).
