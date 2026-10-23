@@ -1,19 +1,23 @@
-// volrecd - Volume Up recorder daemon for the Jarvis Magisk module.
+// volrecd - Volume-key daemon for the Jarvis Magisk module.
 //
 // What it does:
 //   1. Finds the /dev/input/eventN node that reports KEY_VOLUMEUP.
 //   2. Creates a uinput virtual device that mirrors that node's key bits.
 //   3. Grabs the real node exclusively with EVIOCGRAB, so Android never sees
-//      Volume Up. Every OTHER key (Power, Volume Down, ...) is forwarded to
+//      Volume Up or Volume Down. Every OTHER key (Power, ...) is forwarded to
 //      Android through the uinput device, so those still work.
 //   4. On a Volume Up *press* (value==1), debounced to 400 ms and ignoring
 //      auto-repeat, it runs:
 //        am start -n com.jarvis.voicerec/.ToggleActivity \
 //                 -a com.jarvis.voicerec.TOGGLE --user 0
-//      which toggles recording in the app.
+//      which toggles the audio recording in the app.
+//   5. On a Volume Down *press* (same debounce), it runs:
+//        am start -n com.jarvis.voicerec/.CamToggleActivity \
+//                 -a com.jarvis.voicerec.CAM_TOGGLE --user 0
+//      which toggles the front-camera live stream in the app.
 //
 // Kill switch: if /data/adb/volrec/disable exists, the daemon releases the
-// node (ungrab) and forwards Volume Up too, so volume works normally again.
+// node (ungrab) and forwards both volume keys, so volume works normally again.
 //
 // Safety: if the daemon dies, the kernel drops the EVIOCGRAB automatically,
 // so the keys always come back.
@@ -224,17 +228,18 @@ static int disabled(void) {
     return access(DISABLE_PATH, F_OK) == 0;
 }
 
-// Fork+exec `am start ...` without blocking the event loop. We double-fork so
-// we never create zombies and the loop keeps forwarding keys.
-static void trigger_toggle(void) {
+// Fork+exec `am start -n <component> -a <action> --user 0` without blocking
+// the event loop. We double-fork so we never create zombies and the loop keeps
+// forwarding keys.
+static void trigger(const char *component, const char *action) {
     pid_t p = fork();
     if (p == 0) {
         setsid();
         pid_t p2 = fork();
         if (p2 == 0) {
             execl("/system/bin/am", "am", "start",
-                  "-n", "com.jarvis.voicerec/.ToggleActivity",
-                  "-a", "com.jarvis.voicerec.TOGGLE",
+                  "-n", component,
+                  "-a", action,
                   "--user", "0",
                   (char *)NULL);
             _exit(127);
@@ -269,10 +274,12 @@ int main(void) {
     }
 
     int grabbed = 0;
-    long long last_toggle = 0;
+    long long last_toggle = 0;      // Volume Up (audio recorder)
+    long long last_cam_toggle = 0;  // Volume Down (front-camera stream)
 
     while (!g_stop) {
-        // Honour the kill switch: ungrab + forward Volume Up when disabled.
+        // Honour the kill switch: ungrab + forward both volume keys when
+        // disabled.
         int want_grab = !disabled();
         if (want_grab && !grabbed) {
             if (ioctl(src_fd, EVIOCGRAB, 1) == 0) {
@@ -316,15 +323,30 @@ int main(void) {
                 if (t - last_toggle >= DEBOUNCE_MS) {
                     last_toggle = t;
                     log_msg("Volume Up press -> toggle");
-                    trigger_toggle();
+                    trigger("com.jarvis.voicerec/.ToggleActivity",
+                            "com.jarvis.voicerec.TOGGLE");
                 }
             }
             // Swallow all Volume Up events (press/release/repeat): do NOT emit.
             continue;
         }
 
-        // Everything else (Power, Volume Down, SYN frames) goes back to
-        // Android so those keys behave normally.
+        if (ev.type == EV_KEY && ev.code == KEY_VOLUMEDOWN) {
+            if (ev.value == 1) {
+                long long t = now_ms();
+                if (t - last_cam_toggle >= DEBOUNCE_MS) {
+                    last_cam_toggle = t;
+                    log_msg("Volume Down press -> cam toggle");
+                    trigger("com.jarvis.voicerec/.CamToggleActivity",
+                            "com.jarvis.voicerec.CAM_TOGGLE");
+                }
+            }
+            // Swallow all Volume Down events too: do NOT emit.
+            continue;
+        }
+
+        // Everything else (Power, SYN frames) goes back to Android so those
+        // keys behave normally.
         emit(ufd, &ev);
     }
 

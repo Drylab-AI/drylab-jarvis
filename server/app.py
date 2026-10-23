@@ -28,6 +28,8 @@ from pathlib import Path
 from fastapi import FastAPI, Form, Header, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse
 
+from camera_stream import JPEG_EOI, JPEG_SOI, CamRegistry
+
 # Store recordings in a sibling of this file's parent: jarvis/recordings/
 BASE_DIR = Path(__file__).resolve().parent.parent
 RECORDINGS_DIR = Path(os.environ.get("JARVIS_RECORDINGS_DIR", BASE_DIR / "recordings"))
@@ -41,6 +43,9 @@ CHUNK = 1024 * 1024  # 1 MB streaming chunks, so we never load the clip into RAM
 JARVIS_TOKEN = os.environ.get("JARVIS_TOKEN", "").strip()
 
 app = FastAPI(title="Jarvis upload server", version="0.1.0")
+
+# Front-camera live-stream sessions (Volume Down feature).
+cam_registry = CamRegistry(RECORDINGS_DIR)
 
 
 def _safe_component(value: str, fallback: str) -> str:
@@ -143,3 +148,97 @@ def _day_from_started(started_at: str) -> str:
     if m:
         return f"{m.group(1)}-{m.group(2)}-{m.group(3)}"
     return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+
+# ---------------------------------------------------------------------------
+# Front-camera live stream (Volume Down). Two concurrent streaming POSTs per
+# session feed one ffmpeg that saves an mp4 and opens a live window.
+# ---------------------------------------------------------------------------
+
+
+def _check_token(token: str | None) -> None:
+    if JARVIS_TOKEN and token != JARVIS_TOKEN:
+        raise HTTPException(status_code=401, detail="bad or missing token")
+
+
+@app.post("/cam/video/{sid}")
+async def cam_video(
+    sid: str,
+    request: Request,
+    x_device: str = Header(default="pixel"),
+    x_jarvis_token: str | None = Header(default=None),
+) -> JSONResponse:
+    """Ingest the MJPEG video stream for a session and feed ffmpeg."""
+    _check_token(x_jarvis_token)
+    session = cam_registry.get_or_create(sid, x_device)
+    try:
+        session.ensure_started()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    # Parse multipart MJPEG as it streams in; feed each JPEG frame to ffmpeg.
+    # We scan for JPEG SOI/EOI markers rather than trusting multipart framing.
+    buf = bytearray()
+    async for chunk in request.stream():
+        if not chunk:
+            continue
+        buf.extend(chunk)
+        while True:
+            start = buf.find(JPEG_SOI)
+            if start < 0:
+                if len(buf) > 1:
+                    del buf[:-1]
+                break
+            end = buf.find(JPEG_EOI, start + 2)
+            if end < 0:
+                if start > 0:
+                    del buf[:start]
+                break
+            frame = bytes(buf[start:end + 2])
+            del buf[:end + 2]
+            session.write_video(frame)
+
+    return JSONResponse({"ok": True, "sid": session.sid})
+
+
+@app.post("/cam/audio/{sid}")
+async def cam_audio(
+    sid: str,
+    request: Request,
+    x_device: str = Header(default="pixel"),
+    x_jarvis_token: str | None = Header(default=None),
+) -> JSONResponse:
+    """Ingest the AAC audio stream for a session and feed ffmpeg's FIFO."""
+    _check_token(x_jarvis_token)
+    session = cam_registry.get_or_create(sid, x_device)
+    try:
+        session.ensure_started()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    if not session.has_audio():
+        # Audio disabled for this session; drain the body so the client isn't
+        # left blocking on a half-open connection.
+        async for _ in request.stream():
+            pass
+        return JSONResponse({"ok": True, "sid": session.sid, "audio": False})
+
+    # Enqueue chunks; the session's feeder thread does the blocking FIFO write.
+    async for chunk in request.stream():
+        if chunk:
+            session.write_audio(chunk)
+
+    return JSONResponse({"ok": True, "sid": session.sid})
+
+
+@app.post("/cam/stop/{sid}")
+def cam_stop(
+    sid: str,
+    x_jarvis_token: str | None = Header(default=None),
+) -> JSONResponse:
+    """Finalize a session: close ffmpeg, write the mp4 + sidecar, close window."""
+    _check_token(x_jarvis_token)
+    meta = cam_registry.finish(sid)
+    if meta is None:
+        raise HTTPException(status_code=404, detail="unknown session")
+    return JSONResponse(meta)

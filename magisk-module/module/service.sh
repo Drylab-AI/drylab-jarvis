@@ -21,9 +21,11 @@ sleep 5
 log "boot complete, setting up"
 
 # One-time app setup (idempotent):
-#  - pre-grant RECORD_AUDIO so the app can record without a prompt
+#  - pre-grant RECORD_AUDIO and CAMERA so the app can record / open the front
+#    camera without a prompt, even from the lock screen
 #  - whitelist from Doze so WorkManager uploads are not deferred for hours
 appops set "$APP" RECORD_AUDIO allow 2>>"$LOG"
+appops set "$APP" CAMERA allow 2>>"$LOG"
 dumpsys deviceidle whitelist +"$APP" 2>>"$LOG"
 
 # Keep volrecd running; restart with backoff if it dies.
