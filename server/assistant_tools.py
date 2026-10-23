@@ -4,19 +4,60 @@ Tools fall into two groups:
   - PHONE tools (open_camera, close_camera, start_recording, stop_recording,
     show_image): the PC asks the phone to do something via the PhoneLink
     control channel. These return a short status string to Gemini.
-  - PC tools (draw_chart): computed on the PC (matplotlib) and pushed to the
+  - PC tools (draw_chart, run_python): computed on the PC and pushed to the
     phone as an image via show_image. Used because native code_execution is
     not available on the native-audio Live model.
 
 dispatch() returns a JSON-serialisable result that is sent back to Gemini as
 the function response.
+
+run_python executes real code as the logged-in user, so it is gated by
+JARVIS_ALLOW_CODE (default on) and bounded by JARVIS_CODE_TIMEOUT seconds.
 """
 
 from __future__ import annotations
 
+import asyncio
 import io
 import json
+import os
+import shutil
+import signal
+import sys
+import tempfile
+import textwrap
 from typing import Any
+
+# run_python limits. Kept small so a runaway script can never wedge the
+# assistant: the model just gets a timeout string and can tell the user.
+CODE_TIMEOUT = float(os.environ.get("JARVIS_CODE_TIMEOUT", "20"))
+CODE_ENABLED = os.environ.get("JARVIS_ALLOW_CODE", "1").strip().lower() not in (
+    "0",
+    "false",
+    "no",
+)
+# Cap what we feed back to the model: stdout goes into the prompt, and a
+# runaway print loop would otherwise blow up the context and the WebSocket.
+MAX_OUTPUT_CHARS = 4000
+
+# Wrapper around user code: if the snippet leaves a matplotlib figure open we
+# save it to a known path so the chart can be pushed to the phone without the
+# model needing a second tool call.
+_CODE_WRAPPER = """\
+import os, sys
+os.environ.setdefault("MPLBACKEND", "Agg")
+__jarvis_fig = os.environ["JARVIS_FIG_PATH"]
+
+{body}
+
+# Auto-capture a figure the snippet drew but never saved.
+try:
+    import matplotlib.pyplot as _plt
+    if _plt.get_fignums():
+        _plt.savefig(__jarvis_fig, dpi=140, bbox_inches="tight")
+except Exception:
+    pass
+"""
 
 # matplotlib is imported lazily inside draw_chart so the server still starts
 # if it is not installed.
@@ -94,6 +135,42 @@ class ToolRouter:
                     "required": ["chart_type", "values"],
                 },
             },
+            {
+                "name": "run_python",
+                "description": (
+                    "Run Python code on the user's PC and get back whatever it "
+                    "prints. Use this for anything you cannot reliably do in "
+                    "your head or that needs real data from the machine: exact "
+                    "or large arithmetic, statistics, date maths, parsing, "
+                    "reading files, checking disk space / CPU / memory, or "
+                    "running a shell command via subprocess. "
+                    "IMPORTANT: print() what you want to know - only stdout "
+                    "comes back. If you draw a matplotlib figure it is shown on "
+                    "the user's phone automatically. Say you are working on it "
+                    "before calling this, then report the result in one or two "
+                    "short sentences."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "code": {
+                            "type": "string",
+                            "description": (
+                                "Python 3 source to execute. Use print() for "
+                                "any value you need back."
+                            ),
+                        },
+                        "purpose": {
+                            "type": "string",
+                            "description": (
+                                "One short phrase on what this computes, for "
+                                "the user-visible log."
+                            ),
+                        },
+                    },
+                    "required": ["code"],
+                },
+            },
         ]
 
     # -- dispatch -----------------------------------------------------------
@@ -124,6 +201,8 @@ class ToolRouter:
                 return "nothing to show; use draw_chart to create an image"
             if name == "draw_chart":
                 return await self._draw_chart(args)
+            if name == "run_python":
+                return await self._run_python(args)
             return f"unknown tool: {name}"
         except Exception as exc:  # noqa: BLE001
             return f"tool error: {exc}"
@@ -177,3 +256,138 @@ class ToolRouter:
             "phone screen. Tell them it is on screen and briefly describe what "
             "it shows."
         )
+
+    # -- run_python ---------------------------------------------------------
+
+    async def _run_python(self, args: dict) -> str:
+        """Execute model-written Python in a subprocess and return its stdout.
+
+        Deliberately a separate interpreter process, not exec(): it gives a
+        hard timeout, keeps a crash or sys.exit() away from the server's event
+        loop, and lets the whole process group be killed if the snippet spawns
+        children.
+        """
+        if not CODE_ENABLED:
+            return (
+                "Code execution is disabled on this server (JARVIS_ALLOW_CODE=0). "
+                "Tell the user it is turned off."
+            )
+
+        code = str(args.get("code") or "").strip()
+        if not code:
+            return "no code provided"
+
+        purpose = str(args.get("purpose") or "running code")
+        # Surface the code on the phone so the user always sees what ran.
+        await self.link.transcript("jarvis", f"[running: {purpose}]")
+
+        workdir = tempfile.mkdtemp(prefix="jarvis-code-")
+        fig_path = os.path.join(workdir, "figure.png")
+        script = os.path.join(workdir, "snippet.py")
+        try:
+            with open(script, "w", encoding="utf-8") as fh:
+                # textwrap.indent keeps the model's own indentation valid
+                # inside the wrapper's module-level body.
+                fh.write(_CODE_WRAPPER.format(body=textwrap.dedent(code)))
+
+            env = dict(os.environ)
+            env["JARVIS_FIG_PATH"] = fig_path
+            env["MPLBACKEND"] = "Agg"
+
+            proc = await asyncio.create_subprocess_exec(
+                sys.executable,
+                "-I",  # isolated: ignore PYTHON* env and the cwd on sys.path
+                script,
+                cwd=workdir,
+                env=env,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                # Own process group, so a timeout kills any children too.
+                start_new_session=True,
+            )
+            try:
+                raw_out, raw_err = await asyncio.wait_for(
+                    proc.communicate(), timeout=CODE_TIMEOUT
+                )
+            except asyncio.TimeoutError:
+                # Kill the group, not just the child: a snippet that spawned a
+                # subprocess would otherwise leave it running forever.
+                try:
+                    os.killpg(proc.pid, signal.SIGKILL)
+                except (ProcessLookupError, PermissionError):
+                    proc.kill()
+                await proc.wait()
+                return (
+                    f"The code was still running after {CODE_TIMEOUT:.0f} seconds "
+                    "and was stopped. Tell the user it took too long, and try a "
+                    "cheaper approach if you can."
+                )
+
+            out = _clip(raw_out.decode("utf-8", "replace").strip())
+            err = _clip(raw_err.decode("utf-8", "replace").strip())
+
+            # A drawn figure is worth more than words: push it to the phone.
+            shown = False
+            if os.path.isfile(fig_path) and os.path.getsize(fig_path) > 0:
+                with open(fig_path, "rb") as fh:
+                    await self.link.show_image(fh.read(), caption=purpose)
+                shown = True
+
+            if proc.returncode != 0:
+                # Last lines of the traceback are the useful part for a retry.
+                detail = err or out or "no output"
+                # A missing third-party package is recoverable: the standard
+                # library can almost always do the same job. Without this nudge
+                # the model apologises and claims it has no access at all.
+                if "ModuleNotFoundError" in detail or "ImportError" in detail:
+                    return (
+                        f"The code failed because a package is not installed:\n"
+                        f"{detail}\n"
+                        "Do NOT tell the user you lack access. Call run_python "
+                        "again using only the standard library (os, shutil, "
+                        "subprocess, platform, pathlib, statistics, datetime, "
+                        "json, math) to get the same answer."
+                    )
+                return (
+                    f"The code failed:\n{detail}\n"
+                    "Explain the problem to the user in one short sentence, or "
+                    "fix the code and try once more."
+                )
+
+            parts = []
+            if out:
+                parts.append(f"Output:\n{out}")
+            if err:
+                # Non-fatal stderr (warnings) - useful context, not a failure.
+                parts.append(f"Warnings:\n{err}")
+            if shown:
+                parts.append(
+                    "A figure from this code is now showing on the user's phone "
+                    "screen."
+                )
+            if not parts:
+                return (
+                    "The code ran fine but printed nothing. If you needed a "
+                    "value, call run_python again with a print() around it."
+                )
+            return (
+                "\n".join(parts)
+                + "\nNow tell the user the answer out loud, briefly and in "
+                "plain language. Do not read out the code."
+            )
+        except Exception as exc:  # noqa: BLE001
+            return f"could not run the code: {exc}"
+        finally:
+            shutil.rmtree(workdir, ignore_errors=True)
+
+
+def _clip(text: str, limit: int = MAX_OUTPUT_CHARS) -> str:
+    """Trim runaway output, keeping the head and the tail.
+
+    The tail matters: for a traceback the last lines name the actual error.
+    """
+    if len(text) <= limit:
+        return text
+    head = text[: limit // 2]
+    tail = text[-limit // 2 :]
+    return f"{head}\n...[{len(text) - limit} chars truncated]...\n{tail}"
