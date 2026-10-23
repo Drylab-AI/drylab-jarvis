@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- This is a personal LAN tool: the server URL is user-configurable and lives
+     on a private network with no TLS. Android's <domain> does not accept CIDR
+     ranges, so rather than hard-code one IP we permit cleartext app-wide. The
+     app only ever talks to the server URL you set on the settings screen. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>
