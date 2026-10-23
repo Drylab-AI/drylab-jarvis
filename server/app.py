@@ -26,7 +26,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import FastAPI, Form, Header, HTTPException, Request, UploadFile
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from camera_stream import JPEG_EOI, JPEG_SOI, CamRegistry
 
@@ -242,3 +242,48 @@ def cam_stop(
     if meta is None:
         raise HTTPException(status_code=404, detail="unknown session")
     return JSONResponse(meta)
+
+
+@app.get("/cam/live/{sid}")
+async def cam_live(sid: str) -> StreamingResponse:
+    """Serve the live view as an MJPEG stream (multipart/x-mixed-replace).
+
+    Re-serves the session's latest JPEG frame, so VLC or a browser can attach
+    at any time and immediately see the current frame - no UDP/TCP join race.
+    """
+    session = cam_registry.get(sid)
+    if session is None:
+        raise HTTPException(status_code=404, detail="unknown session")
+
+    boundary = "jarvislive"
+
+    async def gen():
+        import anyio
+
+        last_seq = -1
+        idle = 0
+        while True:
+            s = cam_registry.get(sid)
+            if s is None or s.stopped:
+                break
+            frame = s.latest_jpeg
+            seq = s._frame_seq
+            if frame is not None and seq != last_seq:
+                last_seq = seq
+                idle = 0
+                yield (
+                    b"--" + boundary.encode() + b"\r\n"
+                    b"Content-Type: image/jpeg\r\n"
+                    b"Content-Length: " + str(len(frame)).encode() + b"\r\n\r\n"
+                    + frame + b"\r\n"
+                )
+            else:
+                idle += 1
+                if idle > 600:  # ~30 s with no new frame -> end
+                    break
+            await anyio.sleep(0.05)
+
+    return StreamingResponse(
+        gen(),
+        media_type=f"multipart/x-mixed-replace; boundary={boundary}",
+    )

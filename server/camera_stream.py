@@ -25,6 +25,7 @@ import os
 import queue
 import re
 import shutil
+import socket
 import subprocess
 import threading
 import time
@@ -80,6 +81,9 @@ class CamSession:
         self._audio_q: queue.Queue[bytes | None] = queue.Queue(maxsize=240)
         self._video_thread: threading.Thread | None = None
         self._audio_thread: threading.Thread | None = None
+        # Latest JPEG frame for the HTTP-MJPEG live view (/cam/live/<sid>).
+        self.latest_jpeg: bytes | None = None
+        self._frame_seq = 0
         with CamSession._slot_lock:
             self.slot = CamSession._slot_counter % 50
             CamSession._slot_counter += 1
@@ -111,14 +115,16 @@ class CamSession:
                 self.audio_fifo = None
 
             cmd = [FFMPEG, "-hide_banner", "-loglevel", "warning", "-y",
-                   # Video from stdin (MJPEG). -r sets the assumed input rate so
-                   # timestamps are sane even though MJPEG carries none.
-                   "-f", "mjpeg", "-framerate", "15", "-thread_queue_size", "512",
+                   # Video from stdin (MJPEG). Stamp each frame with the wall
+                   # clock on arrival so video and audio share ONE timebase -
+                   # mixing a framerate clock here with a wall-clock audio clock
+                   # is what floods the mux with "backward in time" and stalls
+                   # the live output.
+                   "-use_wallclock_as_timestamps", "1",
+                   "-f", "mjpeg", "-thread_queue_size", "512",
                    "-i", "pipe:0"]
             if self.audio_fifo is not None:
-                # Audio FIFO as a second input; -thread_queue_size avoids drops.
-                # Tolerate stream glitches and derive timestamps from arrival so
-                # a hiccup in the audio never aborts the whole mux.
+                # Audio FIFO as a second input on the same wall-clock timebase.
                 cmd += ["-thread_queue_size", "512",
                         "-use_wallclock_as_timestamps", "1",
                         "-fflags", "+igndts+discardcorrupt",
@@ -132,25 +138,23 @@ class CamSession:
             if self.audio_fifo is not None:
                 cmd += ["-map", "1:a:0"]
 
-            # Encode video; fragmented mp4 (frag_keyframe+empty_moov) stays
-            # playable even if we are killed mid-stream.
+            # Encode video to a steady 15 fps; fragmented mp4 stays playable
+            # even if we are killed mid-stream.
             cmd += ["-c:v", "libx264", "-preset", "veryfast", "-tune", "zerolatency",
-                    "-pix_fmt", "yuv420p", "-r", "15", "-g", "30"]
+                    "-pix_fmt", "yuv420p", "-r", "15", "-g", "30",
+                    "-vsync", "cfr"]
             if self.audio_fifo is not None:
-                cmd += ["-c:a", "aac", "-b:a", "96k"]
+                # aresample async=1 pads/stretches audio to keep A/V in sync
+                # despite jittery FIFO arrival, keeping timestamps monotonic.
+                cmd += ["-c:a", "aac", "-b:a", "96k",
+                        "-af", "aresample=async=1:first_pts=0"]
 
+            # ffmpeg writes the fragmented mp4 file (with audio). The live
+            # window is served separately as HTTP MJPEG from the latest frame
+            # (see /cam/live/<sid>), which avoids all UDP/TCP join races.
             file_out = str(self.out_path)
-            frag = "movflags=frag_keyframe+empty_moov+default_base_moof"
-            if LIVE_WINDOW:
-                # tee muxer: write a fragmented mp4 and stream mpegts over UDP.
-                tee = (
-                    f"[f=mp4:{frag}]{file_out}|"
-                    f"[f=mpegts]udp://127.0.0.1:{self.udp_port}?pkt_size=1316"
-                )
-                cmd += ["-f", "tee", tee]
-            else:
-                cmd += ["-movflags", "frag_keyframe+empty_moov+default_base_moof",
-                        "-f", "mp4", file_out]
+            cmd += ["-movflags", "frag_keyframe+empty_moov+default_base_moof",
+                    "-f", "mp4", file_out]
 
             # Drain ffmpeg stderr to a per-session log so its pipe never fills
             # (a full stderr pipe would block ffmpeg and freeze the stream).
@@ -226,17 +230,30 @@ class CamSession:
             pass
 
     def _open_window(self) -> None:
-        """Best-effort live window via VLC reading the UDP mpegts stream."""
+        """Best-effort live window: VLC opens the server's HTTP MJPEG stream.
+
+        The server re-serves the latest JPEG frames at
+        http://127.0.0.1:<port>/cam/live/<sid>, so VLC (or a browser) can
+        attach at any time and immediately see the current frame - no UDP/TCP
+        join race. We wait until at least one frame has arrived before
+        launching the window."""
         if not VLC or not Path(VLC).exists():
             return
-        # Give ffmpeg a beat to start emitting before VLC connects.
+
         def _launch():
-            time.sleep(1.0)
+            # Wait for the first frame so VLC does not open on an empty stream.
+            for _ in range(50):
+                if self.stopped:
+                    return
+                if self.latest_jpeg is not None:
+                    break
+                time.sleep(0.2)
+            port = int(os.environ.get("JARVIS_PORT", "8787"))
+            url = f"http://127.0.0.1:{port}/cam/live/{self.sid}"
             try:
                 self.vlc = subprocess.Popen(
-                    [VLC, "--no-video-title-show", "--network-caching=200",
-                     "--meta-title", f"Jarvis front cam {self.sid}",
-                     f"udp://@127.0.0.1:{self.udp_port}"],
+                    [VLC, "--no-video-title-show", "--network-caching=300",
+                     "--meta-title", f"Jarvis cam {self.sid}", url],
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                 )
@@ -248,10 +265,14 @@ class CamSession:
 
     def write_video(self, frame: bytes) -> None:
         """Enqueue a JPEG frame for the video feeder thread. Drops the oldest
-        frame when the queue is full so a slow disk never backs up memory."""
+        frame when the queue is full so a slow disk never backs up memory.
+        Also keep the latest frame for the HTTP-MJPEG live view."""
         if self.stopped:
             return
         self.bytes_video += len(frame)
+        # Latest-frame snapshot for /cam/live/<sid> (robust late-join view).
+        self.latest_jpeg = frame
+        self._frame_seq += 1
         try:
             self._video_q.put_nowait(frame)
         except queue.Full:
