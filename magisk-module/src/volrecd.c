@@ -90,8 +90,50 @@ static void log_msg(const char *fmt, ...) {
     fclose(f);
 }
 
-// Open the input node that exposes KEY_VOLUMEUP. Returns fd or -1.
-// Writes the node path into name_out for logging.
+// Open the physical-button input node that sends KEY_VOLUMEUP. Returns fd
+// or -1, and writes the chosen node path into path_out.
+//
+// On the Pixel 8 Pro two nodes expose KEY_VOLUMEUP: "gpio_keys" (the real
+// buttons: VolumeUp + VolumeDown + Power, no touch axes) and
+// "goodix_fingerprint" (a big virtual keyset for fingerprint gestures).
+// Grabbing the fingerprint node would swallow those gestures and still miss
+// the real button. So we SCORE every candidate and keep the best:
+//   + must have KEY_VOLUMEUP
+//   + big bonus for also having KEY_VOLUMEDOWN and KEY_POWER (button cluster)
+//   + bonus for being named like the gpio button device
+//   - reject nodes that carry touch/absolute axes (touchscreen) or FF (haptics)
+static int score_node(int fd, const char *name) {
+    unsigned long keybits[NLONGS(KEY_MAX)];
+    memset(keybits, 0, sizeof(keybits));
+    if (ioctl(fd, EVIOCGBIT(EV_KEY, sizeof(keybits)), keybits) < 0) return -1;
+    if (!TEST_BIT(KEY_VOLUMEUP, keybits)) return -1;
+
+    // Reject anything with absolute axes (touchscreen/joystick): a button
+    // node has none.
+    unsigned long absbits[NLONGS(ABS_MAX)];
+    memset(absbits, 0, sizeof(absbits));
+    if (ioctl(fd, EVIOCGBIT(EV_ABS, sizeof(absbits)), absbits) >= 0) {
+        for (size_t i = 0; i < NLONGS(ABS_MAX); i++) {
+            if (absbits[i]) return -1;
+        }
+    }
+
+    int score = 1;
+    if (TEST_BIT(KEY_VOLUMEDOWN, keybits)) score += 5;
+    if (TEST_BIT(KEY_POWER, keybits)) score += 5;
+    // Fingerprint node is full of navigation/camera keys; a pure button node
+    // is not. Penalise nodes that also carry these virtual keys.
+    if (TEST_BIT(KEY_CAMERA, keybits)) score -= 4;
+    if (TEST_BIT(KEY_BACK, keybits)) score -= 2;
+    if (TEST_BIT(KEY_HOME, keybits)) score -= 2;
+    if (name && (strstr(name, "gpio") || strstr(name, "pmic") ||
+                 strstr(name, "key"))) {
+        score += 3;
+    }
+    if (name && strstr(name, "fingerprint")) score -= 6;
+    return score;
+}
+
 static int find_volup_node(char *path_out, size_t path_len) {
     DIR *d = opendir("/dev/input");
     if (!d) {
@@ -100,7 +142,11 @@ static int find_volup_node(char *path_out, size_t path_len) {
     }
 
     struct dirent *de;
-    int found_fd = -1;
+    int best_fd = -1;
+    int best_score = 0;  // require a positive score to accept
+    char best_path[300] = {0};
+    char best_name[256] = {0};
+
     while ((de = readdir(d)) != NULL) {
         if (strncmp(de->d_name, "event", 5) != 0) continue;
 
@@ -109,22 +155,30 @@ static int find_volup_node(char *path_out, size_t path_len) {
         int fd = open(path, O_RDWR);
         if (fd < 0) continue;
 
-        unsigned long keybits[NLONGS(KEY_MAX)];
-        memset(keybits, 0, sizeof(keybits));
-        if (ioctl(fd, EVIOCGBIT(EV_KEY, sizeof(keybits)), keybits) >= 0) {
-            if (TEST_BIT(KEY_VOLUMEUP, keybits)) {
-                char devname[256] = "unknown";
-                ioctl(fd, EVIOCGNAME(sizeof(devname)), devname);
-                log_msg("found KEY_VOLUMEUP on %s (%s)", path, devname);
-                snprintf(path_out, path_len, "%s", path);
-                found_fd = fd;
-                break;
-            }
+        char devname[256] = "unknown";
+        ioctl(fd, EVIOCGNAME(sizeof(devname)), devname);
+        int s = score_node(fd, devname);
+        if (s > best_score) {
+            // New winner: close the previous best and keep this one open.
+            if (best_fd >= 0) close(best_fd);
+            best_fd = fd;
+            best_score = s;
+            snprintf(best_path, sizeof(best_path), "%s", path);
+            snprintf(best_name, sizeof(best_name), "%s", devname);
+        } else {
+            close(fd);
         }
-        close(fd);
     }
     closedir(d);
-    return found_fd;
+
+    if (best_fd >= 0) {
+        log_msg("selected %s (%s) score=%d for KEY_VOLUMEUP",
+                best_path, best_name, best_score);
+        snprintf(path_out, path_len, "%s", best_path);
+    } else {
+        log_msg("ERROR no suitable KEY_VOLUMEUP button node found");
+    }
+    return best_fd;
 }
 
 // Create a uinput device that can emit every key the real node can, so we can
