@@ -40,3 +40,16 @@ gestures and miss the real button.
 
 Live `getevent -lt` confirmation of the physical press is deferred to Phase 2
 (after root) because non-root getevent cannot read events on Android 16.
+
+## Post-root confirmation (2026-10-23)
+
+Rooted with Magisk v30.7:
+- Patched init_boot.img in the Magisk app (Stock boot image detected -> All done).
+- `fastboot flash init_boot magisk_patched.img` to slot b.
+- `adb shell su -c id` -> `uid=0(root) ... context=u:r:magisk:s0`.
+- `magisk -V` -> 30700. Bootloader still unlocked (locked=0), build CP1A.260305.018.
+
+Root `getevent -pl` re-confirms KEY_VOLUMEUP on event0 (gpio_keys: Vol±/Power,
+the physical buttons) and event1 (goodix_fingerprint). The daemon's scoring
+picks gpio_keys. Live key-event proof will come from the daemon toggling
+recording on a real Volume Up press (Phase 7 case 1).
