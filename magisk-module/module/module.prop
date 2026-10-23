@@ -1,0 +1,6 @@
+id=volrec
+name=Jarvis Volume-Up Recorder
+version=v0.1.0
+versionCode=1
+author=jarvis
+description=Captures Volume Up to toggle mic recording in the Jarvis app; forwards all other keys so Power and Volume Down still work.
