@@ -18,6 +18,7 @@ This is a LAN machine, so the token is just a switch you can flip later.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import re
@@ -25,9 +26,20 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import FastAPI, Form, Header, HTTPException, Request, UploadFile
+from fastapi import (
+    FastAPI,
+    Form,
+    Header,
+    HTTPException,
+    Request,
+    UploadFile,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from fastapi.responses import JSONResponse, StreamingResponse
 
+from assistant import OP_CAM_JPEG, OP_MIC_PCM, GeminiLiveBridge, PhoneLink
+from assistant_tools import ToolRouter
 from camera_stream import JPEG_EOI, JPEG_SOI, CamRegistry
 
 # Store recordings in a sibling of this file's parent: jarvis/recordings/
@@ -261,6 +273,74 @@ img{{display:block;width:100vw;height:100vh;object-fit:contain}}</style>
 <img src="/cam/live/{safe}" alt="live camera">
 </body></html>"""
     return HTMLResponse(html)
+
+
+@app.websocket("/assistant/ws")
+async def assistant_ws(websocket: WebSocket) -> None:
+    """Realtime voice-assistant bridge.
+
+    The phone sends mic PCM (opcode 0x01) and camera JPEG (0x02) as binary
+    frames, plus JSON control (start/stop). The server runs a Gemini Live
+    session and sends back assistant PCM (0x11) and JSON control (state,
+    transcript, tool, show_image, flush).
+    """
+    # Optional token gate (query param, since WS has no custom headers easily).
+    if JARVIS_TOKEN and websocket.query_params.get("token") != JARVIS_TOKEN:
+        await websocket.close(code=4401)
+        return
+
+    await websocket.accept()
+
+    send_lock = asyncio.Lock()
+
+    async def send_json(obj: dict) -> None:
+        async with send_lock:
+            await websocket.send_text(json.dumps(obj))
+
+    async def send_bytes(data: bytes) -> None:
+        async with send_lock:
+            await websocket.send_bytes(data)
+
+    link = PhoneLink(send_json, send_bytes)
+    tools = ToolRouter(link)
+    bridge = GeminiLiveBridge(link, tools)
+
+    # Run the Gemini session concurrently with the phone receive loop.
+    run_task = asyncio.create_task(bridge.run())
+    try:
+        while True:
+            msg = await websocket.receive()
+            if msg.get("type") == "websocket.disconnect":
+                break
+            data = msg.get("bytes")
+            if data is not None and len(data) >= 1:
+                op = data[0]
+                payload = data[1:]
+                if op == OP_MIC_PCM:
+                    bridge.push_mic(payload)
+                elif op == OP_CAM_JPEG:
+                    bridge.push_cam(payload)
+                continue
+            text = msg.get("text")
+            if text:
+                try:
+                    ctl = json.loads(text)
+                except ValueError:
+                    continue
+                # Reserved for future client control (e.g. {"type":"bye"}).
+                if ctl.get("type") == "bye":
+                    break
+    except WebSocketDisconnect:
+        pass
+    except Exception:  # noqa: BLE001
+        pass
+    finally:
+        bridge.close()
+        run_task.cancel()
+        try:
+            await run_task
+        except Exception:  # noqa: BLE001
+            pass
 
 
 @app.get("/cam/live/{sid}")
