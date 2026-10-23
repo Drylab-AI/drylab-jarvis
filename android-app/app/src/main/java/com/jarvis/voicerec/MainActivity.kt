@@ -32,7 +32,14 @@ class MainActivity : AppCompatActivity() {
 
     private val requestPerms = registerForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions(),
-    ) { /* result surfaced when the user records */ }
+    ) { granted ->
+        // The wake word needs RECORD_AUDIO before its mic foreground service
+        // may start, so (re)start it only once the grant actually lands.
+        if (granted[Manifest.permission.RECORD_AUDIO] == true && Prefs.wakeEnabled(this)) {
+            startWakeService()
+        }
+        syncWakeToggle()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -65,21 +72,50 @@ class MainActivity : AppCompatActivity() {
         }
 
         // On-device "Jarvis" wake word (free openWakeWord, no key needed).
-        b.wakeToggle.isChecked = Prefs.wakeEnabled(this)
-        b.wakeToggle.setOnCheckedChangeListener { _, on ->
-            Prefs.setWakeEnabled(this, on)
-            val intent = Intent(this, WakeService::class.java)
-            if (on) {
-                // The service retries until RECORD_AUDIO is granted.
-                ensurePermissions()
-                startForegroundService(intent.setAction(WakeService.ACTION_START))
-            } else {
-                stopService(intent)
-            }
-            toast(if (on) "Say \"Jarvis\" to talk" else "Wake word off")
-        }
+        b.wakeToggle.isChecked = Prefs.wakeEnabled(this) && hasMic()
+        attachWakeToggleListener()
 
         observeUploads()
+    }
+
+    private fun attachWakeToggleListener() {
+        b.wakeToggle.setOnCheckedChangeListener { _, on ->
+            Prefs.setWakeEnabled(this, on)
+            if (!on) {
+                stopService(Intent(this, WakeService::class.java))
+                toast("Wake word off")
+                return@setOnCheckedChangeListener
+            }
+            if (hasMic()) {
+                startWakeService()
+                toast("Say \"Jarvis\" to talk")
+            } else {
+                // Starting a mic foreground service without the permission
+                // throws, so ask first; the callback starts it once granted.
+                ensurePermissions()
+                toast("Allow the microphone to use the wake word")
+            }
+        }
+    }
+
+    private fun hasMic(): Boolean =
+        ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) ==
+            PackageManager.PERMISSION_GRANTED
+
+    private fun startWakeService() {
+        startForegroundService(
+            Intent(this, WakeService::class.java).setAction(WakeService.ACTION_START)
+        )
+    }
+
+    /** Reflect the real state: the toggle can only be on if the mic is granted. */
+    private fun syncWakeToggle() {
+        val on = Prefs.wakeEnabled(this) && hasMic()
+        if (b.wakeToggle.isChecked != on) {
+            b.wakeToggle.setOnCheckedChangeListener(null)
+            b.wakeToggle.isChecked = on
+            attachWakeToggleListener()
+        }
     }
 
     private fun ensurePermissions() {

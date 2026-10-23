@@ -58,11 +58,30 @@ class WakeService : LifecycleService() {
 
     private val handler = Handler(Looper.getMainLooper())
 
-    // Owned by the listener thread; the detector outlives individual listening
-    // sessions (loading the models once is the expensive part).
-    @Volatile private var detector: OpenWakeWord? = null
-    @Volatile private var listening = false
-    @Volatile private var record: AudioRecord? = null
+    /**
+     * One listening session: its own AudioRecord and cancel flag, so a thread
+     * that outlived its stop (e.g. a join timeout while the models load) can
+     * never interfere with a newer session.
+     */
+    private class Session {
+        @Volatile var cancelled = false
+        @Volatile var record: AudioRecord? = null
+
+        fun cancel() {
+            cancelled = true
+            // Unblock a pending blocking read so the thread exits promptly.
+            runCatching { record?.stop() }
+        }
+    }
+
+    // The detector is owned by the service (loading the models is the
+    // expensive part) and guarded by detectorLock so onDestroy cannot close it
+    // while a listener thread is mid-inference.
+    private val detectorLock = Any()
+    private var detector: OpenWakeWord? = null
+    private var detectorClosed = false
+
+    @Volatile private var session: Session? = null
     private var listenThread: Thread? = null
 
     /** Monotonic time before which the guard loop must not resume listening. */
@@ -70,8 +89,20 @@ class WakeService : LifecycleService() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         super.onStartCommand(intent, flags, startId)
-        // Must enter the foreground promptly whenever started as an FGS.
         ensureChannel()
+
+        // A microphone-type foreground service may only be started while
+        // RECORD_AUDIO is actually granted (Android 14+ throws otherwise), so
+        // bail out before touching startForeground if it is missing. The user
+        // can flip the toggle again after granting it.
+        if (!hasMicPermission()) {
+            Log.w(TAG, "RECORD_AUDIO not granted; wake word cannot start")
+            isRunning = false
+            stopSelf()
+            return START_NOT_STICKY
+        }
+
+        // Must enter the foreground promptly whenever started as an FGS.
         startForegroundCompat()
 
         if (intent?.action == ACTION_STOP || !Prefs.wakeEnabled(this)) {
@@ -86,6 +117,10 @@ class WakeService : LifecycleService() {
         return START_STICKY
     }
 
+    private fun hasMicPermission(): Boolean =
+        ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) ==
+            PackageManager.PERMISSION_GRANTED
+
     /**
      * Reconcile mic ownership every [GUARD_PERIOD_MS]: listen when the
      * assistant is idle, release the mic while it runs.
@@ -95,9 +130,10 @@ class WakeService : LifecycleService() {
             if (!isRunning) return
             val assistantBusy = AssistantService.isRunning
             val inHandoff = SystemClock.elapsedRealtime() < resumeNotBefore
+            val active = session != null
             when {
-                assistantBusy && listening -> stopListening()
-                !assistantBusy && !inHandoff && !listening -> startListening()
+                assistantBusy && active -> stopListening()
+                !assistantBusy && !inHandoff && !active -> startListening()
             }
             handler.postDelayed(this, GUARD_PERIOD_MS)
         }
@@ -108,71 +144,77 @@ class WakeService : LifecycleService() {
         handler.post(guard)
     }
 
-    @SuppressLint("MissingPermission")
     private fun startListening() {
-        if (listening) return
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
-            != PackageManager.PERMISSION_GRANTED
-        ) {
+        if (session != null) return
+        if (!hasMicPermission()) {
             Log.w(TAG, "RECORD_AUDIO not granted; cannot listen")
             return
         }
-        listening = true
-        listenThread = Thread({ listenLoop() }, "jarvis-wake").also { it.start() }
+        val s = Session()
+        session = s
+        listenThread = Thread({ listenLoop(s) }, "jarvis-wake").also { it.start() }
     }
 
-    /** Mic -> 80 ms frames -> detector, on a dedicated thread. */
-    @SuppressLint("MissingPermission")
-    private fun listenLoop() {
-        val det = detector ?: try {
+    /**
+     * Get (creating on first use) the shared detector, or null once the
+     * service is being destroyed.
+     */
+    private fun detector(): OpenWakeWord? = synchronized(detectorLock) {
+        if (detectorClosed) return null
+        detector?.let { return it }
+        return try {
             OpenWakeWord({ name -> assets.open(name).use { it.readBytes() } })
                 .also { detector = it }
         } catch (e: Exception) {
             Log.e(TAG, "failed to load wake-word models", e)
-            listening = false
-            return
+            null
         }
-        det.reset() // never carry stale audio across listening sessions
+    }
 
+    /** Mic -> 80 ms frames -> detector, on a dedicated per-session thread. */
+    @SuppressLint("MissingPermission")
+    private fun listenLoop(s: Session) {
         val frame = ShortArray(OpenWakeWord.FRAME_SAMPLES)
         val minBuf = AudioRecord.getMinBufferSize(
             OpenWakeWord.SAMPLE_RATE,
             AudioFormat.CHANNEL_IN_MONO,
             AudioFormat.ENCODING_PCM_16BIT,
         )
-        val rec = try {
-            AudioRecord(
-                MediaRecorder.AudioSource.VOICE_RECOGNITION,
-                OpenWakeWord.SAMPLE_RATE,
-                AudioFormat.CHANNEL_IN_MONO,
-                AudioFormat.ENCODING_PCM_16BIT,
-                maxOf(minBuf, frame.size * 2 * 4),
-            )
-        } catch (e: Exception) {
-            Log.e(TAG, "AudioRecord init failed", e)
-            listening = false
-            return
-        }
-        if (rec.state != AudioRecord.STATE_INITIALIZED) {
-            Log.e(TAG, "AudioRecord not initialized")
-            rec.release()
-            listening = false
-            return
-        }
-        record = rec
-
+        var rec: AudioRecord? = null
         var lastWake = 0L
         var lastBeat = SystemClock.elapsedRealtime()
         var beatMax = 0f
         var beatRms = 0.0
         var beatFrames = 0
         try {
+            // Loading the models can take a moment; the session may already
+            // have been cancelled by then.
+            if (s.cancelled) return
+            val det = detector() ?: return
+            if (s.cancelled) return
+
+            rec = AudioRecord(
+                MediaRecorder.AudioSource.VOICE_RECOGNITION,
+                OpenWakeWord.SAMPLE_RATE,
+                AudioFormat.CHANNEL_IN_MONO,
+                AudioFormat.ENCODING_PCM_16BIT,
+                maxOf(minBuf, frame.size * 2 * 4),
+            )
+            if (rec.state != AudioRecord.STATE_INITIALIZED) {
+                Log.e(TAG, "AudioRecord not initialized")
+                return
+            }
+            s.record = rec
+            if (s.cancelled) return
+
+            det.reset() // never carry stale audio across listening sessions
             rec.startRecording()
             Log.i(TAG, "listening for 'Jarvis' (on-device, openWakeWord)")
-            while (listening) {
+
+            while (!s.cancelled) {
                 // Fill exactly one 80 ms frame.
                 var got = 0
-                while (got < frame.size && listening) {
+                while (got < frame.size && !s.cancelled) {
                     val n = rec.read(frame, got, frame.size - got, AudioRecord.READ_BLOCKING)
                     if (n <= 0) break
                     got += n
@@ -197,25 +239,29 @@ class WakeService : LifecycleService() {
                     // so the guard loop doesn't grab it back before the
                     // assistant's own service has started.
                     resumeNotBefore = now + HANDOFF_MS
-                    listening = false
+                    s.cancelled = true
                     handler.post { onWake() }
                 }
             }
         } catch (e: Exception) {
             Log.e(TAG, "listen loop error", e)
         } finally {
-            runCatching { rec.stop() }
-            rec.release()
-            record = null
-            listening = false
+            rec?.let {
+                runCatching { it.stop() }
+                runCatching { it.release() }
+            }
+            s.record = null
+            // Only clear the shared slot if this session is still the current
+            // one; a newer session must not be wiped by a stale thread.
+            if (session === s) session = null
             Log.i(TAG, "stopped listening")
         }
     }
 
     private fun stopListening() {
-        listening = false
-        // Unblock a pending read so the thread exits promptly.
-        runCatching { record?.stop() }
+        val s = session ?: return
+        session = null
+        s.cancel()
         listenThread?.let { t ->
             if (t !== Thread.currentThread()) runCatching { t.join(1_500) }
         }
@@ -255,8 +301,14 @@ class WakeService : LifecycleService() {
         isRunning = false
         handler.removeCallbacks(guard)
         stopListening()
-        runCatching { detector?.close() }
-        detector = null
+        // Mark the detector unavailable first so a thread that outlived the
+        // join cannot create a new one, then close it. OpenWakeWord's methods
+        // are synchronized, so close() waits for any in-flight accept().
+        synchronized(detectorLock) {
+            detectorClosed = true
+            runCatching { detector?.close() }
+            detector = null
+        }
         super.onDestroy()
     }
 
