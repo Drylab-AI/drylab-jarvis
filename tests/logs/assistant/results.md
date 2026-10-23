@@ -32,6 +32,19 @@ Model: `gemini-2.5-flash-native-audio-preview-12-2025` (env `JARVIS_LIVE_MODEL`)
 3. Wake service held the mic when the assistant started via long-press/button
    -> guard loop releases/resumes the mic for any trigger path.
 
+## LIVE end to end (2026-10-23, real key)
+
+A Gemini API key was created for the Drylab account (anhnguyen@thedrylab.com)
+via the gcloud CLI, restricted to generativelanguage.googleapis.com, in the
+existing `gen-lang-client-0454204175` project (Gemini API already enabled).
+Stored at `~/.config/jarvis/env` (chmod 600, not in git).
+
+- Bridge connect test with the real key: states went connecting -> listening,
+  no errors (the native-audio Live session opens with the full config).
+- Phone end to end: AssistantActivity -> WebSocket accepted -> connection open
+  -> on-screen state reached **"Listening"** with no phone-side errors. The
+  mic -> WS -> PC -> Gemini path is live; the assistant is ready to converse.
+
 ## Needs GEMINI_API_KEY to fully exercise (set it and restart the server)
 
 With the key set (`export GEMINI_API_KEY=...` before launching the server),
