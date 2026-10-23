@@ -31,6 +31,7 @@ magisk-module/*.zip
 # Test run logs (proof lives under tests/, but keep heavy raw logs out)
 tests/logs/toolchain/
 tests/logs/server-test.log
+tests/logs/server-run.log
 
 # Editor / OS
 .DS_Store

@@ -7,8 +7,12 @@ object Prefs {
     private const val FILE = "jarvis_prefs"
     private const val KEY_SERVER_URL = "server_url"
 
-    /** Default points at this PC's LAN IP from the plan. */
-    const val DEFAULT_SERVER_URL = "http://192.168.1.28:8765"
+    /**
+     * Default points at this PC's LAN IP. Port 8787 is used because ports
+     * 8765/8766 on the target machine are already held by another local app;
+     * change this (or the URL on the settings screen) for a different host.
+     */
+    const val DEFAULT_SERVER_URL = "http://192.168.1.28:8787"
 
     fun serverUrl(ctx: Context): String =
         ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE)

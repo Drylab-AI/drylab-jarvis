@@ -20,8 +20,8 @@ and uploads, and a FastAPI server on this PC stores the clips.
 ## Quick start (software)
 
 ```bash
-# Server
-cd server && uv run uvicorn app:app --host 0.0.0.0 --port 8765
+# Server (port 8787 here; 8765/8766 are taken by another local app)
+cd server && uv run uvicorn app:app --host 0.0.0.0 --port 8787
 
 # Daemon + Magisk module zip
 cd magisk-module && ANDROID_HOME=~/Android/Sdk ./build.sh   # -> build/volrec.zip

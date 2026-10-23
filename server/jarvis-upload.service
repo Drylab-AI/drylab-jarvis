@@ -17,7 +17,8 @@ Wants=network-online.target
 [Service]
 # Adjust WorkingDirectory if you move the repo.
 WorkingDirectory=%h/Work/Drylab/jarvis/server
-ExecStart=%h/.local/bin/uv run uvicorn app:app --host 0.0.0.0 --port 8765
+# Port 8787: 8765/8766 are held by another local app on this machine.
+ExecStart=%h/.local/bin/uv run uvicorn app:app --host 0.0.0.0 --port 8787
 Restart=on-failure
 RestartSec=3
 # Uncomment to turn on the shared-secret token:
