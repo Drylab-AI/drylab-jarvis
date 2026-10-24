@@ -39,7 +39,7 @@ from fastapi import (
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from assistant import OP_CAM_JPEG, OP_MIC_PCM, GeminiLiveBridge, PhoneLink
-from assistant_tools import ToolRouter
+from assistant_tools import ToolRouter, warm_matplotlib
 from camera_stream import JPEG_EOI, JPEG_SOI, CamRegistry
 
 # Store recordings in a sibling of this file's parent: jarvis/recordings/
@@ -55,6 +55,13 @@ CHUNK = 1024 * 1024  # 1 MB streaming chunks, so we never load the clip into RAM
 JARVIS_TOKEN = os.environ.get("JARVIS_TOKEN", "").strip()
 
 app = FastAPI(title="Jarvis upload server", version="0.1.0")
+
+
+@app.on_event("startup")
+async def _warm() -> None:
+    # The first matplotlib import takes seconds; do it before the first chart
+    # request instead of during one, in the background so startup stays fast.
+    asyncio.get_running_loop().run_in_executor(None, warm_matplotlib)
 
 # Front-camera live-stream sessions (Volume Down feature).
 cam_registry = CamRegistry(RECORDINGS_DIR)

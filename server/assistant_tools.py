@@ -26,6 +26,7 @@ import signal
 import sys
 import tempfile
 import textwrap
+import threading
 from typing import Any
 
 # run_python limits. Kept small so a runaway script can never wedge the
@@ -73,7 +74,27 @@ class ToolRouter:
 
     # -- declarations -------------------------------------------------------
 
-    def declarations(self) -> list[dict]:
+    # Phone actions finish in well under a second and the reply depends on
+    # them ("the camera is open" must not be said before it is), so the model
+    # waits for them. On gemini-3.8-live tools are NON_BLOCKING by default,
+    # so this has to be stated explicitly.
+    BLOCKING = {"open_camera", "close_camera", "start_recording",
+                "stop_recording", "show_image"}
+
+    def is_blocking(self, name: str) -> bool:
+        return name in self.BLOCKING
+
+    def declarations(self, non_blocking_ok: bool = True) -> list[dict]:
+        """Tool schemas. With non_blocking_ok (3.8 models) slow PC tools are
+        NON_BLOCKING, so Jarvis keeps talking while they run, like the
+        paper's background model; the 2.5 models don't accept `behavior`."""
+        decls = self._schemas()
+        if non_blocking_ok:
+            for d in decls:
+                d["behavior"] = "BLOCKING" if d["name"] in self.BLOCKING else "NON_BLOCKING"
+        return decls
+
+    def _schemas(self) -> list[dict]:
         return [
             {
                 "name": "open_camera",
@@ -208,48 +229,16 @@ class ToolRouter:
             return f"tool error: {exc}"
 
     async def _draw_chart(self, args: dict) -> str:
-        try:
-            import matplotlib
-
-            matplotlib.use("Agg")
-            import matplotlib.pyplot as plt
-        except Exception as exc:  # noqa: BLE001
-            return f"matplotlib unavailable: {exc}"
-
+        """Render in a worker thread: matplotlib takes 100s of ms (seconds on
+        first import) and used to block the event loop, freezing audio for
+        every connected phone while a chart was drawn."""
         chart_type = str(args.get("chart_type", "bar"))
-        values = [float(v) for v in (args.get("values") or [])]
-        labels = [str(x) for x in (args.get("labels") or [])]
-        if not values:
-            return "no values provided"
-        if not labels or len(labels) != len(values):
-            labels = [str(i + 1) for i in range(len(values))]
-
-        fig, ax = plt.subplots(figsize=(6, 4), dpi=140)
         try:
-            if chart_type == "line":
-                ax.plot(labels, values, marker="o")
-            elif chart_type == "pie":
-                ax.pie(values, labels=labels, autopct="%1.0f%%")
-            elif chart_type == "scatter":
-                ax.scatter(range(len(values)), values)
-                ax.set_xticks(range(len(values)))
-                ax.set_xticklabels(labels)
-            else:  # bar
-                ax.bar(labels, values)
-            if args.get("title"):
-                ax.set_title(str(args["title"]))
-            if chart_type != "pie":
-                if args.get("x_label"):
-                    ax.set_xlabel(str(args["x_label"]))
-                if args.get("y_label"):
-                    ax.set_ylabel(str(args["y_label"]))
-            fig.tight_layout()
-            buf = io.BytesIO()
-            fig.savefig(buf, format="png")
-            png = buf.getvalue()
-        finally:
-            plt.close(fig)
-
+            png = await asyncio.to_thread(_render_chart, args)
+        except Exception as exc:  # noqa: BLE001
+            return f"could not draw the chart: {exc}"
+        if png is None:
+            return "no values provided"
         await self.link.show_image(png, caption=str(args.get("title", "chart")))
         return (
             f"The {chart_type} chart is drawn and is now showing on the user's "
@@ -391,3 +380,60 @@ def _clip(text: str, limit: int = MAX_OUTPUT_CHARS) -> str:
     head = text[: limit // 2]
     tail = text[-limit // 2 :]
     return f"{head}\n...[{len(text) - limit} chars truncated]...\n{tail}"
+
+
+_plot_lock = threading.Lock()
+
+
+def warm_matplotlib() -> None:
+    """Import matplotlib once at startup so the first chart isn't slow."""
+    try:
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot  # noqa: F401
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _render_chart(args: dict) -> bytes | None:
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    chart_type = str(args.get("chart_type", "bar"))
+    values = [float(v) for v in (args.get("values") or [])]
+    labels = [str(x) for x in (args.get("labels") or [])]
+    if not values:
+        return None
+    if not labels or len(labels) != len(values):
+        labels = [str(i + 1) for i in range(len(values))]
+
+    # pyplot keeps global state, so charts are drawn one at a time.
+    with _plot_lock:
+        fig, ax = plt.subplots(figsize=(6, 4), dpi=140)
+        try:
+            if chart_type == "line":
+                ax.plot(labels, values, marker="o")
+            elif chart_type == "pie":
+                ax.pie(values, labels=labels, autopct="%1.0f%%")
+            elif chart_type == "scatter":
+                ax.scatter(range(len(values)), values)
+                ax.set_xticks(range(len(values)))
+                ax.set_xticklabels(labels)
+            else:  # bar
+                ax.bar(labels, values)
+            if args.get("title"):
+                ax.set_title(str(args["title"]))
+            if chart_type != "pie":
+                if args.get("x_label"):
+                    ax.set_xlabel(str(args["x_label"]))
+                if args.get("y_label"):
+                    ax.set_ylabel(str(args["y_label"]))
+            fig.tight_layout()
+            buf = io.BytesIO()
+            fig.savefig(buf, format="png")
+            return buf.getvalue()
+        finally:
+            plt.close(fig)
