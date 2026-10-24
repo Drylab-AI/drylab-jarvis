@@ -442,13 +442,19 @@ class AssistantCamToPc:
             await asyncio.to_thread(s.ensure_started)
         except Exception as exc:  # noqa: BLE001
             print(f"assistant camera to PC failed: {exc}")
-            cam_registry.finish(sid)
+            await asyncio.to_thread(cam_registry.finish, sid)
             self._starting = False
+            return
+        self._starting = False
+        if self.closed:
+            # finish() ran while ffmpeg was starting (close_camera or the
+            # chat ending) and found no sid to stop. Stop this session here,
+            # or ffmpeg and the PC window would be orphaned.
+            await asyncio.to_thread(cam_registry.finish, sid)
             return
         s.write_video(first)
         self.sid = sid
         self.bridge.cam_sid = sid
-        self._starting = False
         print(f"JARVIS_T {datetime.now().timestamp():.3f} pc_cam_start sid={sid}", flush=True)
 
     async def finish(self) -> None:

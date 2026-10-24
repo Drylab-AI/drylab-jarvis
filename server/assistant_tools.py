@@ -304,17 +304,30 @@ class ToolRouter:
                 # Own process group, so a timeout kills any children too.
                 start_new_session=True,
             )
-            try:
-                raw_out, raw_err = await asyncio.wait_for(
-                    proc.communicate(), timeout=CODE_TIMEOUT
-                )
-            except asyncio.TimeoutError:
+            def kill_group() -> None:
                 # Kill the group, not just the child: a snippet that spawned a
                 # subprocess would otherwise leave it running forever.
                 try:
                     os.killpg(proc.pid, signal.SIGKILL)
                 except (ProcessLookupError, PermissionError):
-                    proc.kill()
+                    try:
+                        proc.kill()
+                    except ProcessLookupError:
+                        pass
+
+            try:
+                raw_out, raw_err = await asyncio.wait_for(
+                    proc.communicate(), timeout=CODE_TIMEOUT
+                )
+            except asyncio.CancelledError:
+                # Tools now run as tasks: the model can cancel the call
+                # (tool_call_cancellation) or the chat can end mid-run.
+                # CancelledError is not TimeoutError, so without this the
+                # snippet kept running while `finally` deleted its cwd.
+                kill_group()
+                raise
+            except asyncio.TimeoutError:
+                kill_group()
                 await proc.wait()
                 return (
                     f"The code was still running after {CODE_TIMEOUT:.0f} seconds "

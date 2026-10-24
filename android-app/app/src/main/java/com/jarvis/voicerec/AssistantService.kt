@@ -259,6 +259,9 @@ class AssistantService : LifecycleService() {
                 "flush" -> {
                     Timeline.mark("server_flush")
                     flushPlayback()
+                    // Gemini confirmed the interruption: what it sends next
+                    // is the new answer.
+                    player?.unmute()
                 }
                 "tool" -> {
                     Timeline.mark("tool", "action=${o.optString("action")}")
@@ -270,6 +273,8 @@ class AssistantService : LifecycleService() {
                         lastState = s
                         Timeline.mark("state", s)
                     }
+                    // The interrupted reply's turn is over on the server.
+                    if (s == "listening") player?.unmute()
                 }
                 "show_image" -> Timeline.mark("show_image")
             }
@@ -428,6 +433,7 @@ class AssistantService : LifecycleService() {
                     override fun lastReplyAt(): Long = lastPcmAt
                     override fun cutIn() {
                         player?.stop()
+                        player?.muteReplyUntilServerAck()
                     }
                     override fun playFiller(): Boolean = playRandomFiller()
                 },

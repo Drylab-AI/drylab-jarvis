@@ -289,6 +289,106 @@ check("model quota -> stop and tell the user (no retry loop)",
       len(hs) == 2 and any("quota" in e["message"].lower() for e in errs), f"{hs}")
 assistant._SEARCH_QUOTA_OUT[0] = False
 
+
+# -- 10. bugbot regressions --------------------------------------------------------
+
+# Mid-session quota error must NOT disable search for the process.
+class MidSessionFail:
+    """Connects fine, then the receive loop raises a quota error once."""
+    def __init__(self):
+        self.configs = []
+        self.n = 0
+
+    def __call__(self, model, config):
+        self.configs.append(config)
+        outer = self
+
+        class Sess(FakeSession):
+            async def receive(self_inner):
+                outer.n += 1
+                if outer.n == 1:
+                    raise RuntimeError("1011 You exceeded your current quota (model rate limit)")
+                return
+                yield  # noqa: unreachable - makes this an async generator
+
+        class Ctx:
+            async def __aenter__(self_inner):
+                return Sess([])
+
+            async def __aexit__(self_inner, *a):
+                return False
+        return Ctx()
+
+
+async def t_midquota():
+    assistant._SEARCH_QUOTA_OUT[0] = False
+    br, _, _ = make_bridge()
+    fc = MidSessionFail()
+    import google.genai as genai_mod
+
+    class FakeClient:
+        def __init__(self, api_key):
+            self.aio = NS(live=NS(connect=fc))
+    orig = genai_mod.Client
+    genai_mod.Client = FakeClient
+    try:
+        task = asyncio.create_task(br.run())
+        await asyncio.sleep(0.8)
+        br.close()
+        try:
+            await asyncio.wait_for(task, 3)
+        except Exception:  # noqa: BLE001
+            pass
+    finally:
+        genai_mod.Client = orig
+    return br._use_search, assistant._SEARCH_QUOTA_OUT[0], len(fc.configs)
+
+use_search, global_off, n_connects = asyncio.run(t_midquota())
+check("mid-session quota error keeps web search on", use_search and not global_off,
+      f"use_search={use_search} global_off={global_off}")
+check("socket closing right after open backs off (no reconnect storm)", n_connects <= 4,
+      f"{n_connects} connects in 0.8 s")
+assistant._SEARCH_QUOTA_OUT[0] = False
+
+
+# Camera to PC: finish() during a slow start must not orphan the session.
+async def t_cam_race():
+    import importlib
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "server"))
+    app = importlib.import_module("app")
+    finished = []
+    started = asyncio.Event()
+
+    class FakeSess:
+        def __init__(self):
+            self.frames = 0
+
+        def ensure_started(self):
+            time.sleep(0.3)  # ffmpeg + window launch take a while
+
+        def write_video(self, b):
+            self.frames += 1
+
+    fake = FakeSess()
+    orig = (app.cam_registry.get_or_create, app.cam_registry.finish, app.cam_registry.get)
+    app.cam_registry.get_or_create = lambda sid, dev, with_audio=True: fake
+    app.cam_registry.finish = lambda sid: finished.append(sid) or {}
+    app.cam_registry.get = lambda sid: fake
+    try:
+        br, _, _ = make_bridge()
+        pc = app.AssistantCamToPc(br)
+        pc.frame(b"jpeg")          # starts the session (slow)
+        await asyncio.sleep(0.05)
+        await pc.finish()          # camera closed while still starting
+        await asyncio.sleep(0.6)
+        return finished, pc.sid
+    finally:
+        app.cam_registry.get_or_create, app.cam_registry.finish, app.cam_registry.get = orig
+
+fin, left = asyncio.run(t_cam_race())
+check("camera closed during start: session still finished, none left",
+      len(fin) == 1 and left is None, f"finished={fin} sid={left}")
+
 print()
 if FAIL:
     print(f"{len(FAIL)} FAILED: {', '.join(FAIL)}")

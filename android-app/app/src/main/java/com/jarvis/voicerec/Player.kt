@@ -90,8 +90,30 @@ class Player(private val rate: Int = 24_000) {
         thread.start()
     }
 
+    /**
+     * Set by a local cut-in: until then, model audio still on the wire for
+     * the interrupted reply is dropped. Without this the rest of the old
+     * sentence resumed playing mid-word right after the cut (bugbot).
+     * Cleared by [unmute] when the server confirms the turn is over (its
+     * `flush` / `listening`), or after a safety timeout in case Gemini never
+     * treats the overlap as an interruption.
+     */
+    @Volatile private var mutedUntil = 0L
+
+    fun muteReplyUntilServerAck(maxMs: Long = 2_500L) {
+        mutedUntil = Timeline.now() + maxMs
+    }
+
+    fun unmute() {
+        mutedUntil = 0L
+    }
+
     /** Queue reply audio (any thread). Cuts a filler that is playing. */
     fun enqueueModel(pcm: ByteArray) {
+        if (mutedUntil != 0L) {
+            if (Timeline.now() < mutedUntil) return
+            mutedUntil = 0L
+        }
         if (playing == "filler" || q.peek()?.source == "filler") cutFiller()
         q.offer(Chunk(gen.get(), "model", pcm))
     }

@@ -211,6 +211,32 @@ check(
 leftover = glob.glob(os.path.join(tempfile.gettempdir(), "jarvis-code-*"))
 check("20 no temp dirs leaked", leftover == [], f"leftover: {leftover}")
 
+
+# 21 - a CANCELLED call (model cancelled it / chat ended) kills the snippet
+# and its children. Regression: CancelledError skipped the kill and the
+# process kept running after its temp dir was deleted (bugbot).
+async def _cancel_run() -> bool:
+    import subprocess as sp
+    tag = f"jarvis-cancel-{os.getpid()}"
+    code = (
+        "import subprocess,sys,time\n"
+        f"subprocess.Popen([sys.executable,'-c','import time; time.sleep(120)  # {tag}'])\n"
+        "time.sleep(60)"
+    )
+    task = asyncio.create_task(ToolRouter(FakeLink()).dispatch("run_python", {"code": code}))
+    await asyncio.sleep(1.5)
+    task.cancel()
+    try:
+        await task
+    except BaseException:  # noqa: BLE001
+        pass
+    await asyncio.sleep(0.5)
+    out = sp.run(["pgrep", "-f", tag], capture_output=True, text=True).stdout.strip()
+    return out == ""
+
+
+check("21 cancelled call kills snippet + children", asyncio.run(_cancel_run()))
+
 print()
 if FAILURES:
     print(f"{len(FAILURES)} FAILED: {', '.join(FAILURES)}")

@@ -19,7 +19,8 @@ Wire framing on the phone WebSocket (see app.py):
 
 Model + behaviour are configured via env so they are easy to update:
   GEMINI_API_KEY            required to actually connect
-  JARVIS_LIVE_MODEL         default gemini-2.5-flash-native-audio-preview-12-2025
+  JARVIS_LIVE_MODEL         default gemini-3.8-live (2.5 native-audio still
+                            works; see IS_LEGACY_MODEL for what differs)
 """
 
 from __future__ import annotations
@@ -289,6 +290,7 @@ class GeminiLiveBridge:
                     # reconnects (with the latest resume handle).
                     mic_task = asyncio.create_task(self._pump_mic())
                     cam_task = asyncio.create_task(self._pump_cam())
+                    t_open = time.monotonic()
                     try:
                         await self._receive(types)
                     finally:
@@ -297,6 +299,12 @@ class GeminiLiveBridge:
                         await asyncio.gather(
                             mic_task, cam_task, return_exceptions=True
                         )
+                    # A socket that closes right after opening (with no
+                    # exception) would otherwise reconnect in a tight loop.
+                    # GoAway-driven reconnects after a long session stay instant.
+                    if not self._closed and time.monotonic() - t_open < 5:
+                        failures += 1
+                        await asyncio.sleep(min(0.3 * (2 ** (failures - 1)), 8.0))
             except asyncio.CancelledError:
                 raise
             except Exception as exc:  # noqa: BLE001
@@ -305,7 +313,11 @@ class GeminiLiveBridge:
                 self.last_error = str(exc)[:300]
                 quota = "quota" in str(exc).lower() or "RESOURCE_EXHAUSTED" in str(exc)
                 _tlog("live_error", quota=quota, err=str(exc)[:80].replace(" ", "_"))
-                if quota and self._use_search:
+                # Only a quota refusal AT CONNECT TIME points at search
+                # grounding (measured: the session is refused before any
+                # message). A quota/rate error mid-session is the model's own
+                # limit and must not switch search off for everyone.
+                if quota and self._use_search and self._session is None:
                     # Measured: on a free key the Google Search grounding
                     # quota runs out long before the Live model's, and the
                     # whole connection is refused. Keep the conversation;
