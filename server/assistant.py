@@ -28,6 +28,7 @@ import asyncio
 import base64
 import json
 import os
+import time
 import traceback
 from typing import Any, Awaitable, Callable
 
@@ -75,6 +76,16 @@ SYSTEM_INSTRUCTION = os.environ.get(
     "the image is unclear, say what you can see and ask one short question.\n"
     "- Turn the camera off with close_camera when it is no longer needed.",
 )
+
+
+def _tlog(event: str, **kw: Any) -> None:
+    """One timeline line per turn event, for latency reports and tests.
+
+    Uses wall time; per-turn latency itself is measured on the phone, so this
+    only needs to be comparable with other server lines.
+    """
+    extra = " ".join(f"{k}={v}" for k, v in kw.items())
+    print(f"JARVIS_T {time.time():.3f} {event} {extra}".rstrip(), flush=True)
 
 
 class PhoneLink:
@@ -134,10 +145,33 @@ class GeminiLiveBridge:
         self._session = None
         self._resume_handle: str | None = None
         self._closed = False
+        # Counters for /assistant/status (tests and latency reports).
+        self.counters: dict[str, int] = {
+            "mic_in": 0,
+            "cam_in": 0,
+            "cam_to_model": 0,
+            "audio_out": 0,
+            "turns": 0,
+            "tool_calls": 0,
+            "tool_cancels": 0,
+            "sessions": 0,
+        }
+        self.connected = False
+        self.last_error = ""
+        self._in_reply = False
+
+    def stats(self) -> dict:
+        return {
+            "model": LIVE_MODEL,
+            "connected": self.connected,
+            "last_error": self.last_error,
+            **self.counters,
+        }
 
     # -- phone -> bridge: the WS handler calls these ------------------------
 
     def push_mic(self, pcm: bytes) -> None:
+        self.counters["mic_in"] += 1
         try:
             self._mic_q.put_nowait(pcm)
         except asyncio.QueueFull:
@@ -152,6 +186,7 @@ class GeminiLiveBridge:
                 pass
 
     def push_cam(self, jpeg: bytes) -> None:
+        self.counters["cam_in"] += 1
         try:
             self._cam_q.put_nowait(jpeg)
         except asyncio.QueueFull:
@@ -202,6 +237,9 @@ class GeminiLiveBridge:
                     model=LIVE_MODEL, config=config
                 ) as session:
                     self._session = session
+                    self.connected = True
+                    self.counters["sessions"] += 1
+                    _tlog("live_connected", model=LIVE_MODEL)
                     await self.link.state("listening")
                     # Greet first so the user hears that Jarvis is ready
                     # instead of an open mic. Only on a fresh session: after a
@@ -229,11 +267,13 @@ class GeminiLiveBridge:
                 if self._closed:
                     break
                 traceback.print_exc()
+                self.last_error = str(exc)[:300]
                 await self.link.error(f"live session error: {exc}")
                 # brief backoff then reconnect (resume handle reused if any)
                 await asyncio.sleep(1.5)
             finally:
                 self._session = None
+                self.connected = False
         await self.link.state("closed")
 
     def _build_config(self, types: Any):
@@ -328,6 +368,7 @@ class GeminiLiveBridge:
                 await self._session.send_realtime_input(
                     video=types.Blob(data=jpeg, mime_type="image/jpeg")
                 )
+                self.counters["cam_to_model"] += 1
             except Exception:  # noqa: BLE001
                 await asyncio.sleep(0.05)
             # Cap at ~1 fps regardless of how fast frames arrive.
@@ -342,12 +383,21 @@ class GeminiLiveBridge:
 
             # Assistant audio out (24 kHz PCM).
             if response.data is not None:
+                self.counters["audio_out"] += 1
+                if not self._in_reply:
+                    # First audio of a reply: the server-side half of the
+                    # latency measurement (the phone measures the full span).
+                    self._in_reply = True
+                    self.counters["turns"] += 1
+                    _tlog("model_audio_start", turn=self.counters["turns"])
                 await self.link.state("speaking")
                 await self.link.audio(response.data)
 
             sc = getattr(response, "server_content", None)
             if sc is not None:
                 if getattr(sc, "interrupted", False):
+                    self._in_reply = False
+                    _tlog("model_interrupted")
                     # Barge-in: user spoke over the assistant.
                     await self.link.flush_playback()
                     await self.link.state("listening")
@@ -371,6 +421,8 @@ class GeminiLiveBridge:
                         if mime.startswith("image/"):
                             await self.link.show_image(inline.data)
                 if getattr(sc, "turn_complete", False):
+                    self._in_reply = False
+                    _tlog("model_turn_complete")
                     await self.link.state("listening")
 
             # Tool calls.
@@ -379,6 +431,8 @@ class GeminiLiveBridge:
                 await self.link.state("thinking")
                 responses = []
                 for fc in tc.function_calls:
+                    self.counters["tool_calls"] += 1
+                    _tlog("tool_call", name=fc.name)
                     result = await self.tools.dispatch(fc.name, dict(fc.args or {}))
                     responses.append(
                         types.FunctionResponse(

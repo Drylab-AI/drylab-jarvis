@@ -298,6 +298,22 @@ async def assistant_say(
     return JSONResponse({"ok": True, "sent": text})
 
 
+@app.get("/assistant/status")
+async def assistant_status(
+    x_jarvis_token: str | None = Header(default=None),
+) -> JSONResponse:
+    """Debug/test only: counters of the active session for the e2e harness.
+
+    Reading these numbers directly is more reliable than parsing logs, e.g.
+    "how many camera frames reached Gemini" vs "how many the phone sent".
+    """
+    _check_token(x_jarvis_token)
+    bridge = ACTIVE_BRIDGES[-1] if ACTIVE_BRIDGES else None
+    if bridge is None:
+        return JSONResponse({"active": False})
+    return JSONResponse({"active": True, **bridge.stats()})
+
+
 @app.websocket("/assistant/ws")
 async def assistant_ws(websocket: WebSocket) -> None:
     """Realtime voice-assistant bridge.

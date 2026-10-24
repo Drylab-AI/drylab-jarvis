@@ -1,0 +1,8 @@
+47628553 assist_start test=true
+47628574 ws_open 
+47628777 state connecting
+47629291 state listening
+47630363 state speaking
+47630379 reply_audio_start source=model
+47631005 reply_audio_start source=model
+47632270 state listening

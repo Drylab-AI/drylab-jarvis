@@ -34,6 +34,8 @@ import okhttp3.WebSocketListener
 import okio.ByteString
 import okio.ByteString.Companion.toByteString
 import org.json.JSONObject
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 
 /**
  * The phone side of the Jarvis voice assistant. A foreground service
@@ -94,6 +96,16 @@ class AssistantService : LifecycleService() {
     private var wakeLock: PowerManager.WakeLock? = null
     private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
 
+    // ---- test mode (debug builds only, see TestMode) -----------------------
+    private var testMode = false
+    private val scriptedMic = ScriptedMic()
+    private var injectReceiver: android.content.BroadcastReceiver? = null
+    private var playedOut: java.io.FileOutputStream? = null
+    /** Phone clock time the last reply chunk was handed to the AudioTrack. */
+    @Volatile private var lastPcmAt = 0L
+    /** Last state sent by the server, so the timeline logs only changes. */
+    @Volatile private var lastState = ""
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         super.onStartCommand(intent, flags, startId)
         when (intent?.action) {
@@ -111,10 +123,53 @@ class AssistantService : LifecycleService() {
         startForegroundCompat()
         isRunning = true
         acquireWakeLock()
+        startTestMode()
         initAudioTrack()
         connect()
         startMic()
+        Timeline.mark("assist_start", "test=$testMode")
         emit("""{"type":"state","state":"connecting"}""")
+    }
+
+    /**
+     * Debug-only: listen for clip injections from the harness and record what
+     * is actually played, so a test can check timing from the real output.
+     */
+    private fun startTestMode() {
+        testMode = TestMode.enabled(this)
+        if (!testMode) return
+        val dir = TestMode.dir(this).apply { mkdirs() }
+        playedOut = runCatching {
+            java.io.FileOutputStream(java.io.File(dir, "played.pcm"), false)
+        }.getOrNull()
+        val r = object : android.content.BroadcastReceiver() {
+            override fun onReceive(c: Context?, i: Intent?) {
+                i ?: return
+                if (i.getBooleanExtra("clear", false)) {
+                    scriptedMic.clear()
+                    return
+                }
+                val path = i.getStringExtra("path") ?: return
+                scriptedMic.enqueue(
+                    path,
+                    i.getStringExtra("name") ?: java.io.File(path).nameWithoutExtension,
+                    i.getStringExtra("trigger") ?: "now",
+                    i.getLongExtra("delay", 0L),
+                )
+            }
+        }
+        injectReceiver = r
+        // Exported only in test mode: `am broadcast` from adb runs as the
+        // shell user, outside the app.
+        registerReceiver(r, android.content.IntentFilter(TestMode.ACTION_INJECT), RECEIVER_EXPORTED)
+        Log.i(TAG, "TEST MODE on (realMic=${TestMode.realMic(this)})")
+    }
+
+    private fun stopTestMode() {
+        injectReceiver?.let { runCatching { unregisterReceiver(it) } }
+        injectReceiver = null
+        runCatching { playedOut?.close() }
+        playedOut = null
     }
 
     // ---- websocket ---------------------------------------------------------
@@ -132,6 +187,7 @@ class AssistantService : LifecycleService() {
         ws = client.newWebSocket(req, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 Log.i(TAG, "ws open")
+                Timeline.mark("ws_open")
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
@@ -162,8 +218,22 @@ class AssistantService : LifecycleService() {
         try {
             val o = JSONObject(text)
             when (o.optString("type")) {
-                "flush" -> flushPlayback()
-                "tool" -> onTool(o.optString("action"))
+                "flush" -> {
+                    Timeline.mark("server_flush")
+                    flushPlayback()
+                }
+                "tool" -> {
+                    Timeline.mark("tool", "action=${o.optString("action")}")
+                    onTool(o.optString("action"))
+                }
+                "state" -> {
+                    val s = o.optString("state")
+                    if (s != lastState) {
+                        lastState = s
+                        Timeline.mark("state", s)
+                    }
+                }
+                "show_image" -> Timeline.mark("show_image")
             }
         } catch (_: Exception) {
         }
@@ -202,6 +272,10 @@ class AssistantService : LifecycleService() {
             return
         }
         micStop.set(false)
+        if (testMode && !TestMode.realMic(this)) {
+            micThread = Thread({ scriptedMicLoop() }, "jarvis-mic-test").also { it.start() }
+            return
+        }
         micThread = Thread {
             val minBuf = AudioRecord.getMinBufferSize(
                 IN_RATE,
@@ -224,6 +298,10 @@ class AssistantService : LifecycleService() {
                 while (!micStop.get()) {
                     val n = rec.read(chunk, 0, chunk.size)
                     if (n > 0) {
+                        val shorts = ShortArray(n / 2)
+                        ByteBuffer.wrap(chunk, 0, n).order(ByteOrder.LITTLE_ENDIAN)
+                            .asShortBuffer().get(shorts)
+                        onMicFrame(shorts)
                         val frame = ByteArray(1 + n)
                         frame[0] = OP_MIC_PCM
                         System.arraycopy(chunk, 0, frame, 1, n)
@@ -237,6 +315,35 @@ class AssistantService : LifecycleService() {
                 try { rec.release() } catch (_: Exception) {}
             }
         }.also { it.start() }
+    }
+
+    /**
+     * Test-mode mic: 40 ms frames from [ScriptedMic], paced against the clock
+     * (not sleep-per-frame, which drifts) so it is real time like a mic.
+     */
+    private fun scriptedMicLoop() {
+        val frameSamples = IN_RATE / 25
+        val samples = ShortArray(frameSamples)
+        val start = Timeline.now()
+        var sent = 0L
+        while (!micStop.get()) {
+            scriptedMic.next(samples)
+            val frame = ByteArray(1 + frameSamples * 2)
+            frame[0] = OP_MIC_PCM
+            ByteBuffer.wrap(frame, 1, frameSamples * 2)
+                .order(ByteOrder.LITTLE_ENDIAN).asShortBuffer().put(samples)
+            onMicFrame(samples)
+            ws?.send(frame.toByteString())
+            sent++
+            val due = start + sent * 40
+            val wait = due - Timeline.now()
+            if (wait > 0) Thread.sleep(wait)
+        }
+    }
+
+    /** Hook for every 40 ms mic frame (real or scripted). */
+    private fun onMicFrame(samples: ShortArray) {
+        // Filled in by the on-phone interaction layer (LocalTurnTaker).
     }
 
     // ---- playback (24 kHz PCM down) ----------------------------------------
@@ -268,7 +375,27 @@ class AssistantService : LifecycleService() {
         audioTrack = track
     }
 
+    /**
+     * A reply starts when audio arrives after a quiet gap. 600 ms is longer
+     * than any gap inside one streamed reply but shorter than a turn.
+     */
+    private fun markReplyAudio(source: String) {
+        val now = Timeline.now()
+        if (now - lastPcmAt > 600) {
+            Timeline.mark("reply_audio_start", "source=$source")
+            scriptedMic.onAssistantSpeaking(now)
+        }
+        lastPcmAt = now
+    }
+
+    private fun recordPlayed(pcm: ByteArray) {
+        val out = playedOut ?: return
+        runCatching { out.write(pcm) }
+    }
+
     private fun playPcm(pcm: ByteArray) {
+        markReplyAudio("model")
+        recordPlayed(pcm)
         val track = audioTrack ?: return
         val gen = playbackGen
         // Blocking write on the WS reader thread is fine (OkHttp dispatches
@@ -334,6 +461,7 @@ class AssistantService : LifecycleService() {
                 }
                 provider.unbindAll()
                 provider.bindToLifecycle(this, CameraSelector.DEFAULT_BACK_CAMERA, analysis)
+                Timeline.mark("camera_bound")
                 emit("""{"type":"camera","on":true}""")
             } catch (e: Exception) {
                 Log.e(TAG, "camera start failed", e)
@@ -347,6 +475,7 @@ class AssistantService : LifecycleService() {
         try { cameraProvider?.unbindAll() } catch (_: Exception) {}
         cameraProvider = null
         demoteFromCamera()
+        Timeline.mark("camera_off")
         emit("""{"type":"camera","on":false}""")
     }
 
@@ -358,6 +487,8 @@ class AssistantService : LifecycleService() {
         try { micThread?.join(800) } catch (_: Exception) {}
         micThread = null
         stopCamera()
+        stopTestMode()
+        Timeline.mark("assist_stop")
         try { ws?.close(1000, "bye") } catch (_: Exception) {}
         ws = null
         try {

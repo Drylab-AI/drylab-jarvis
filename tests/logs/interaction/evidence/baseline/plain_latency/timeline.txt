@@ -1,0 +1,65 @@
+47639169 assist_start test=true
+47639233 ws_open 
+47639241 state connecting
+47639666 state listening
+47654971 mic_clip_queued name=q_capital trigger=now delay=0
+47655010 mic_clip_start name=q_capital
+47656490 mic_clip_end name=q_capital
+47666726 state speaking
+47666739 reply_audio_start source=model
+47668748 state listening
+47670697 mic_clip_queued name=q_moon trigger=now delay=0
+47670730 mic_clip_start name=q_moon
+47672450 mic_clip_end name=q_moon
+47677312 state speaking
+47677320 reply_audio_start source=model
+47686739 state listening
+47688860 mic_clip_queued name=q_color trigger=now delay=0
+47688890 mic_clip_start name=q_color
+47691970 mic_clip_end name=q_color
+47696363 state speaking
+47696371 reply_audio_start source=model
+47697307 state listening
+47699519 mic_clip_queued name=q_legs trigger=now delay=0
+47699530 mic_clip_start name=q_legs
+47701450 mic_clip_end name=q_legs
+47705864 state speaking
+47705881 reply_audio_start source=model
+47707486 state listening
+47709479 mic_clip_queued name=q_boil trigger=now delay=0
+47709490 mic_clip_start name=q_boil
+47711570 mic_clip_end name=q_boil
+47716788 state speaking
+47716804 reply_audio_start source=model
+47725841 state listening
+47728160 mic_clip_queued name=q_ocean trigger=now delay=0
+47728170 mic_clip_start name=q_ocean
+47730170 mic_clip_end name=q_ocean
+47735608 state speaking
+47735620 reply_audio_start source=model
+47742311 state listening
+47744352 mic_clip_queued name=q_planet trigger=now delay=0
+47744369 mic_clip_start name=q_planet
+47746810 mic_clip_end name=q_planet
+47751411 state speaking
+47751425 reply_audio_start source=model
+47753464 state listening
+47755952 mic_clip_queued name=q_week trigger=now delay=0
+47755970 mic_clip_start name=q_week
+47757410 mic_clip_end name=q_week
+47761851 state speaking
+47761867 reply_audio_start source=model
+47763332 state listening
+47765231 mic_clip_queued name=q_tall trigger=now delay=0
+47765250 mic_clip_start name=q_tall
+47767410 mic_clip_end name=q_tall
+47772829 state speaking
+47772848 reply_audio_start source=model
+47788335 state listening
+47790324 mic_clip_queued name=q_hello trigger=now delay=0
+47790329 mic_clip_start name=q_hello
+47792290 mic_clip_end name=q_hello
+47813497 state speaking
+47813511 reply_audio_start source=model
+47814117 reply_audio_start source=model
+47821911 state listening

@@ -42,3 +42,7 @@ tests/logs/server-run.log
 .DS_Store
 *.swp
 .idea/
+
+# e2e harness: heavy per-run artefacts (reports + latency tables are kept)
+tests/logs/interaction/server.log
+tests/logs/interaction/evidence/**/*.pcm
