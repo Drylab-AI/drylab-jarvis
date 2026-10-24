@@ -1,4 +1,4 @@
-# systemd user unit for the Jarvis upload server.
+# systemd user unit for the Jarvis server (uploads, camera, voice assistant).
 #
 # Install (no sudo):
 #   mkdir -p ~/.config/systemd/user
@@ -7,22 +7,31 @@
 #   systemctl --user enable --now jarvis-upload.service
 #   loginctl enable-linger $USER   # so it runs even when you are not logged in
 #
+# Secrets: put GEMINI_API_KEY=... (and optionally JARVIS_TOKEN=...) in
+# ~/.config/jarvis/env, mode 600. Without it the assistant refuses to start
+# ("GEMINI_API_KEY is not set"), which is what this unit used to do.
+#
 # Logs:  journalctl --user -u jarvis-upload -f
 
 [Unit]
-Description=Jarvis voice-clip upload server
+Description=Jarvis server (uploads, camera stream, voice assistant)
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 # Adjust WorkingDirectory if you move the repo.
 WorkingDirectory=%h/Work/Drylab/jarvis/server
+# The leading "-" keeps the server starting (uploads, camera) if the file is
+# missing; only the assistant needs the key.
+EnvironmentFile=-%h/.config/jarvis/env
 # Port 8787: 8765/8766 are held by another local app on this machine.
-ExecStart=%h/.local/bin/uv run uvicorn app:app --host 0.0.0.0 --port 8787
+ExecStart=%h/Work/Drylab/jarvis/server/.venv/bin/python -m uvicorn app:app --host 0.0.0.0 --port 8787
 Restart=on-failure
 RestartSec=3
-# Uncomment to turn on the shared-secret token:
-# Environment=JARVIS_TOKEN=change-me
+# The live camera window opens on your desktop session. systemd user units
+# don't inherit DISPLAY; import it once with:
+#   systemctl --user import-environment DISPLAY WAYLAND_DISPLAY XAUTHORITY
+# or set JARVIS_LIVE_WINDOW=0 in the env file to run headless.
 
 [Install]
 WantedBy=default.target

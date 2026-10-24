@@ -1,0 +1,59 @@
+[
+  {
+    "scenario": "camera_to_pc",
+    "ok": true,
+    "error": "",
+    "checks": [
+      {
+        "name": "camera turned on by voice",
+        "ok": true,
+        "detail": ""
+      },
+      {
+        "name": "server started a PC camera session",
+        "ok": true,
+        "detail": "assist-20261024T055329Z-7dba0a"
+      },
+      {
+        "name": "PC live view /cam/live >= 8 fps",
+        "ok": true,
+        "detail": "10.4 fps"
+      },
+      {
+        "name": "Gemini still gets <= 1 fps",
+        "ok": true,
+        "detail": "1.00 fps"
+      },
+      {
+        "name": "PC viewer page rendered (headless screenshot)",
+        "ok": true,
+        "detail": "tests/logs/interaction/evidence/screens/pc_cam_view.png"
+      },
+      {
+        "name": "camera turned off by voice",
+        "ok": true,
+        "detail": ""
+      },
+      {
+        "name": "an mp4 of the assistant camera was saved",
+        "ok": true,
+        "detail": "7.8 s"
+      },
+      {
+        "name": "exactly one recording per camera open (no ghost session)",
+        "ok": true,
+        "detail": "1 new mp4s"
+      }
+    ],
+    "numbers": {
+      "pc_live_fps": 10.4,
+      "gemini_fps": 1.0,
+      "mp4_seconds": 7.8
+    },
+    "evidence": [
+      "tests/logs/interaction/evidence/screens/pc_cam_view.png",
+      "recordings/2026-10-24/assist-20261024T055329Z-7dba0a_assistant_cam.mp4",
+      "tests/logs/interaction/evidence/phase4g/camera_to_pc/timeline.txt"
+    ]
+  }
+]

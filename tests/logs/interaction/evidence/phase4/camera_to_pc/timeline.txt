@@ -1,0 +1,35 @@
+49818995 assist_start test=true
+49819067 ws_open 
+49819210 state connecting
+49820496 state listening
+49821337 state speaking
+49821339 reply_audio_start source=model
+49822732 state listening
+49824495 mic_clip_queued name=open_camera trigger=now delay=0
+49824519 mic_clip_start name=open_camera
+49824689 local_speech_start 
+49825679 mic_clip_end name=open_camera
+49825923 local_turn_end speech_ms=1216
+49825925 filler_start 
+49826620 state thinking
+49826621 tool action=open_camera
+49826713 filler_end 
+49826714 camera_bound 
+49827356 state speaking
+49827356 reply_audio_start source=model
+49828824 state listening
+49844869 mic_clip_queued name=close_camera trigger=now delay=0
+49844878 mic_clip_start name=close_camera
+49845041 local_speech_start 
+49845522 local_turn_end speech_ms=448
+49845721 local_speech_start 
+49846519 mic_clip_end name=close_camera
+49846720 local_turn_end speech_ms=960
+49846721 filler_start 
+49848337 filler_end 
+49848397 state speaking
+49848398 reply_audio_start source=model
+49848455 state thinking
+49848456 tool action=close_camera
+49848470 camera_off 
+49850405 state listening

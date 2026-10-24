@@ -1,0 +1,31 @@
+[
+  {
+    "scenario": "restart_safety",
+    "ok": true,
+    "error": "",
+    "checks": [
+      {
+        "name": "turn before restart",
+        "ok": true,
+        "detail": ""
+      },
+      {
+        "name": "phone reconnected by itself",
+        "ok": true,
+        "detail": ""
+      },
+      {
+        "name": "next turn works after the restart",
+        "ok": true,
+        "detail": ""
+      }
+    ],
+    "numbers": {
+      "reconnects": 0,
+      "after_restart_ms": 1041
+    },
+    "evidence": [
+      "tests/logs/interaction/evidence/rs/restart_safety/timeline.txt"
+    ]
+  }
+]

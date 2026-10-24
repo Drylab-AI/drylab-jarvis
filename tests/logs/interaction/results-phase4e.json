@@ -1,0 +1,85 @@
+[
+  {
+    "scenario": "camera_to_pc",
+    "ok": true,
+    "error": "",
+    "checks": [
+      {
+        "name": "camera turned on by voice",
+        "ok": true,
+        "detail": ""
+      },
+      {
+        "name": "server started a PC camera session",
+        "ok": true,
+        "detail": "assist-20261024T054952Z-f494c5"
+      },
+      {
+        "name": "PC live view /cam/live >= 8 fps",
+        "ok": true,
+        "detail": "8.0 fps"
+      },
+      {
+        "name": "Gemini still gets <= 1 fps",
+        "ok": true,
+        "detail": "1.00 fps"
+      },
+      {
+        "name": "PC viewer page rendered (headless screenshot)",
+        "ok": true,
+        "detail": "tests/logs/interaction/evidence/screens/pc_cam_view.png"
+      },
+      {
+        "name": "camera turned off by voice",
+        "ok": true,
+        "detail": ""
+      },
+      {
+        "name": "an mp4 of the assistant camera was saved",
+        "ok": true,
+        "detail": "5.6 s"
+      },
+      {
+        "name": "exactly one recording per camera open (no ghost session)",
+        "ok": true,
+        "detail": "1 new mp4s"
+      }
+    ],
+    "numbers": {
+      "pc_live_fps": 8.0,
+      "gemini_fps": 1.0,
+      "mp4_seconds": 5.6
+    },
+    "evidence": [
+      "tests/logs/interaction/evidence/screens/pc_cam_view.png",
+      "recordings/2026-10-24/assist-20261024T054952Z-f494c5_assistant_cam.mp4",
+      "tests/logs/interaction/evidence/phase4e/camera_to_pc/timeline.txt"
+    ]
+  },
+  {
+    "scenario": "camera_conflict",
+    "ok": true,
+    "error": "",
+    "checks": [
+      {
+        "name": "assistant camera on",
+        "ok": true,
+        "detail": ""
+      },
+      {
+        "name": "Volume-Down camera was refused cleanly",
+        "ok": true,
+        "detail": ""
+      },
+      {
+        "name": "assistant camera kept streaming",
+        "ok": true,
+        "detail": "40 frames in 5 s"
+      }
+    ],
+    "numbers": {},
+    "evidence": [
+      "tests/logs/interaction/evidence/phase4e/camera_conflict/timeline.txt"
+    ]
+  }
+]

@@ -1,0 +1,24 @@
+50801193 assist_start test=true
+50801258 ws_open 
+50801267 state connecting
+50802445 state listening
+50803117 state speaking
+50803118 reply_audio_start source=model
+50804451 state listening
+50806534 mic_clip_queued name=tool_math trigger=now delay=0
+50806554 mic_clip_start name=tool_math
+50806720 local_speech_start 
+50809241 local_turn_end speech_ms=2368
+50809244 filler_start 
+50809318 local_cut_in p=0.99 rms=4930
+50813234 mic_clip_end name=tool_math
+50813480 local_turn_end speech_ms=3936
+50813481 filler_start 
+50814676 filler_end 
+50814923 state speaking
+50814924 reply_audio_start source=model
+50815773 show_image 
+50817627 state listening
+50818421 state speaking
+50818421 reply_audio_start source=model
+50824228 state listening

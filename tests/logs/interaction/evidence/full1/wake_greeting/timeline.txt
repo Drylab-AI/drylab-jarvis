@@ -1,0 +1,7 @@
+50576976 assist_start test=true
+50577012 ws_open 
+50577152 state connecting
+50578602 state listening
+50579351 state speaking
+50579353 reply_audio_start source=model
+50581619 state listening

@@ -1,0 +1,95 @@
+[
+  {
+    "scenario": "camera_to_pc",
+    "ok": false,
+    "error": "FileNotFoundError: [Errno 2] No such file or directory: 'ffprobe'",
+    "checks": [
+      {
+        "name": "camera turned on by voice",
+        "ok": true,
+        "detail": ""
+      },
+      {
+        "name": "server started a PC camera session",
+        "ok": true,
+        "detail": "assist-20261024T054400Z-050081"
+      },
+      {
+        "name": "PC live view /cam/live >= 8 fps",
+        "ok": true,
+        "detail": "8.0 fps"
+      },
+      {
+        "name": "Gemini still gets <= 1 fps",
+        "ok": true,
+        "detail": "1.00 fps"
+      },
+      {
+        "name": "camera turned off by voice",
+        "ok": true,
+        "detail": ""
+      }
+    ],
+    "numbers": {
+      "pc_live_fps": 8.0,
+      "gemini_fps": 1.0
+    },
+    "evidence": [
+      "tests/logs/interaction/evidence/phase4/camera_to_pc/timeline.txt"
+    ]
+  },
+  {
+    "scenario": "camera_conflict",
+    "ok": true,
+    "error": "",
+    "checks": [
+      {
+        "name": "assistant camera on",
+        "ok": true,
+        "detail": ""
+      },
+      {
+        "name": "Volume-Down camera was refused cleanly",
+        "ok": true,
+        "detail": ""
+      },
+      {
+        "name": "assistant camera kept streaming",
+        "ok": true,
+        "detail": "40 frames in 5 s"
+      }
+    ],
+    "numbers": {},
+    "evidence": [
+      "tests/logs/interaction/evidence/phase4/camera_conflict/timeline.txt"
+    ]
+  },
+  {
+    "scenario": "tool_timing",
+    "ok": true,
+    "error": "",
+    "checks": [
+      {
+        "name": "camera bound",
+        "ok": true,
+        "detail": ""
+      },
+      {
+        "name": "'camera is open' was said only after the camera was bound",
+        "ok": true,
+        "detail": "bound=49889662 said=49890208"
+      },
+      {
+        "name": "no stuck 'thinking' state",
+        "ok": true,
+        "detail": ""
+      }
+    ],
+    "numbers": {
+      "tool_cancels": 0
+    },
+    "evidence": [
+      "tests/logs/interaction/evidence/phase4/tool_timing/timeline.txt"
+    ]
+  }
+]

@@ -1,0 +1,35 @@
+49921215 assist_start test=true
+49921276 ws_open 
+49921459 state connecting
+49922789 state listening
+49923583 state speaking
+49923587 reply_audio_start source=model
+49925038 state listening
+49926814 mic_clip_queued name=open_camera trigger=now delay=0
+49926815 mic_clip_start name=open_camera
+49927021 local_speech_start 
+49927976 mic_clip_end name=open_camera
+49928225 local_turn_end speech_ms=1184
+49928227 filler_start 
+49928833 state thinking
+49928835 tool action=open_camera
+49928922 camera_bound 
+49929830 state speaking
+49929834 filler_cut 
+49929835 reply_audio_start source=model
+49931095 state listening
+49947441 mic_clip_queued name=close_camera trigger=now delay=0
+49947455 mic_clip_start name=close_camera
+49947617 local_speech_start 
+49948138 local_turn_end speech_ms=480
+49948297 local_speech_start 
+49949095 mic_clip_end name=close_camera
+49949336 local_turn_end speech_ms=992
+49949337 filler_start 
+49950075 filler_end 
+49950468 state thinking
+49950470 tool action=close_camera
+49950479 camera_off 
+49952705 state speaking
+49952706 reply_audio_start source=model
+49954271 state listening

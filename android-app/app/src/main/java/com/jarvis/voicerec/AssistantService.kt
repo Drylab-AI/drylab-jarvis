@@ -185,12 +185,17 @@ class AssistantService : LifecycleService() {
 
     // ---- websocket ---------------------------------------------------------
 
+    /** Consecutive failed connects, for the reconnect backoff. */
+    private var reconnectAttempts = 0
+
     private fun connect() {
         val base = Prefs.serverUrl(this)
         val wsUrl = base.replaceFirst("http://", "ws://")
             .replaceFirst("https://", "wss://") + "/assistant/ws"
-        val client = OkHttpClient.Builder()
-            .pingInterval(20, java.util.concurrent.TimeUnit.SECONDS)
+        val client = http ?: OkHttpClient.Builder()
+            // 5 s pings: a dead PC (restart, Wi-Fi drop) is noticed within
+            // ~10 s instead of the 40 s a 20 s interval took.
+            .pingInterval(5, java.util.concurrent.TimeUnit.SECONDS)
             .readTimeout(0, java.util.concurrent.TimeUnit.SECONDS)
             .build()
         http = client
@@ -199,6 +204,10 @@ class AssistantService : LifecycleService() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 Log.i(TAG, "ws open")
                 Timeline.mark("ws_open")
+                reconnectAttempts = 0
+                // A reconnect after a server restart: the camera may still be
+                // on, but the new server session knows nothing about it.
+                if (cameraOn) mainHandler.post { stopCamera() }
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
@@ -214,13 +223,31 @@ class AssistantService : LifecycleService() {
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 Log.w(TAG, "ws failure: ${t.message}")
-                emit("""{"type":"state","state":"error"}""")
+                emit("""{"type":"state","state":"connecting"}""")
+                scheduleReconnect(webSocket, "failure")
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                 Log.i(TAG, "ws closed $code $reason")
+                scheduleReconnect(webSocket, "closed_$code")
             }
         })
+    }
+
+    /**
+     * The conversation outlives one socket: the PC server may restart or
+     * Wi-Fi may blip. Before, the phone sat on a dead socket until the user
+     * ended the chat. Reconnect with backoff (0.5 s, 1 s, 2 s ... max 8 s)
+     * while the assistant is still running.
+     */
+    private fun scheduleReconnect(dead: WebSocket, why: String) {
+        if (!isRunning || dead !== ws) return
+        ws = null
+        player?.stop()
+        val delay = minOf(500L shl minOf(reconnectAttempts, 4), 8_000L)
+        reconnectAttempts++
+        Timeline.mark("ws_reconnect", "why=$why in_ms=$delay")
+        mainHandler.postDelayed({ if (isRunning && ws == null) connect() }, delay)
     }
 
     private fun handleControl(text: String) {

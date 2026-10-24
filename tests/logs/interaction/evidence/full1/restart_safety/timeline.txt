@@ -1,0 +1,17 @@
+50947937 assist_start test=true
+50948009 ws_open 
+50948151 state connecting
+50949528 state listening
+50950394 state speaking
+50950399 reply_audio_start source=model
+50952038 state listening
+50954163 mic_clip_queued name=q_week trigger=now delay=0
+50954179 mic_clip_start name=q_week
+50954383 local_speech_start 
+50955619 mic_clip_end name=q_week
+50955860 local_turn_end speech_ms=1440
+50955861 filler_start 
+50956598 state speaking
+50956611 filler_cut 
+50956611 reply_audio_start source=model
+50958463 state listening
