@@ -71,6 +71,10 @@ class ToolRouter:
         self.camera_on = False
         # Optional context about a just-recorded file (post-recording hook).
         self.pending_file: str | None = None
+        # Set by the server: called when the camera is closed, to finish the
+        # PC live window / recording of the assistant camera.
+        self.on_camera_closed = None
+        self.on_camera_opened = None
 
     # -- declarations -------------------------------------------------------
 
@@ -200,6 +204,8 @@ class ToolRouter:
         try:
             if name == "open_camera":
                 self.camera_on = True
+                if self.on_camera_opened is not None:
+                    self.on_camera_opened()
                 await self.link.tool("open_camera")
                 # The result text is what the model speaks from, so tell it to
                 # confirm out loud and keep listening.
@@ -211,6 +217,10 @@ class ToolRouter:
             if name == "close_camera":
                 self.camera_on = False
                 await self.link.tool("close_camera")
+                if self.on_camera_closed is not None:
+                    # Finalise the PC live window + mp4 in the background so
+                    # Jarvis can confirm right away.
+                    asyncio.create_task(self.on_camera_closed())
                 return "camera turned off"
             if name == "start_recording":
                 await self.link.tool("start_recording")

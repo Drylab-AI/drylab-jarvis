@@ -104,6 +104,18 @@ class CameraService : LifecycleService() {
 
     private fun startStreaming() {
         ensureChannel()
+        if (AssistantService.cameraBusy) {
+            // The assistant is using the back camera (and already streams it
+            // to the PC). Starting here would unbind its camera silently, so
+            // refuse clearly. The FGS still has to be entered and left.
+            Log.i(TAG, "camera busy: assistant camera is on; Volume-Down stream refused")
+            Timeline.mark("cam_refused", "by=assistant_camera")
+            startForegroundCompat()
+            Vibrate.once(this)
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+            return
+        }
         startedAtMs = SystemClock.elapsedRealtime()
         sid = SimpleDateFormat("yyyyMMdd'T'HHmmss'Z'", Locale.US).format(Date())
         startForegroundCompat()

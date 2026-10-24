@@ -196,11 +196,14 @@ class GeminiLiveBridge:
         self.connected = False
         self.last_error = ""
         self._in_reply = False
+        # Live PC camera session for this chat (see app.AssistantCamToPc).
+        self.cam_sid = ""
 
     def stats(self) -> dict:
         return {
             "model": LIVE_MODEL,
             "search": self._use_search,
+            "cam_sid": self.cam_sid,
             "connected": self.connected,
             "last_error": self.last_error,
             **self.counters,

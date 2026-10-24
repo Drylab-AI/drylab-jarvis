@@ -101,6 +101,17 @@ def s_latency(r: Result) -> None:
             st.get("max_ms", 10**6) <= WORST_MAX_MS, f"{st.get('max_ms')} ms")
 
 
+def mp4_seconds(path: Path) -> float:
+    """Duration by decoding with ffmpeg (ffprobe isn't installed here)."""
+    p = subprocess.run(["ffmpeg", "-hide_banner", "-i", str(path), "-f", "null", "-"],
+                       capture_output=True, text=True, timeout=120)
+    times = re.findall(r"time=(\d+):(\d+):([\d.]+)", p.stderr)
+    if not times:
+        return 0.0
+    h, m, s = times[-1]
+    return int(h) * 3600 + int(m) * 60 + float(s)
+
+
 def probe_direct(clips: list[str]) -> int | None:
     """Median ms from end of clip to first audio, streaming straight to Gemini
     (tests/e2e/probe_live.py), with the server's model and VAD."""
@@ -239,12 +250,22 @@ def s_camera(r: Result) -> None:
     r.numbers["gemini_fps"] = round(to_model, 2)
     r.check("Gemini still gets <= 1 fps", to_model <= 1.05, f"{to_model:.2f} fps")
     if sid:
+        # Headless (agent-browser's default): proves the PC viewer page
+        # renders the live stream without opening a window on the desktop.
         shot = harness.OUT / "evidence/screens/pc_cam_view.png"
-        subprocess.run(["agent-browser", "open", f"{server.BASE}/cam/view/{sid}"],
-                       capture_output=True, timeout=60)
+        shot.parent.mkdir(parents=True, exist_ok=True)
+        # --no-sandbox: Ubuntu 24.04's AppArmor blocks Chrome's user-namespace
+        # sandbox for this binary ("No usable sandbox!"). The page is our own
+        # localhost viewer, so the sandbox adds nothing here.
+        sess = ["--session", "jarvis-e2e", "--args", "--no-sandbox"]
+        subprocess.run(["agent-browser", *sess, "open", f"{server.BASE}/cam/view/{sid}"],
+                       capture_output=True, timeout=90)
         time.sleep(2)
-        subprocess.run(["agent-browser", "screenshot", str(shot)], capture_output=True, timeout=60)
-        subprocess.run(["agent-browser", "close"], capture_output=True, timeout=30)
+        subprocess.run(["agent-browser", *sess, "screenshot", str(shot)],
+                       capture_output=True, timeout=60)
+        subprocess.run(["agent-browser", *sess, "close"], capture_output=True, timeout=30)
+        r.check("PC viewer page rendered (headless screenshot)", shot.exists()
+                and shot.stat().st_size > 5000, str(shot.relative_to(ROOT)))
         if shot.exists():
             r.evidence.append(str(shot.relative_to(ROOT)))
     since2 = phone.device_ms()
@@ -256,16 +277,12 @@ def s_camera(r: Result) -> None:
     new = sorted(after - before)
     dur = 0.0
     if new:
-        p = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration",
-                            "-of", "default=nw=1:nk=1", str(new[-1])],
-                           capture_output=True, text=True)
-        try:
-            dur = float(p.stdout.strip() or 0)
-        except ValueError:
-            dur = 0.0
+        dur = mp4_seconds(new[-1])
         r.evidence.append(str(new[-1].relative_to(ROOT)))
     r.numbers["mp4_seconds"] = round(dur, 1)
     r.check("an mp4 of the assistant camera was saved", dur > 0, f"{dur:.1f} s")
+    r.check("exactly one recording per camera open (no ghost session)", len(new) == 1,
+            f"{len(new)} new mp4s")
 
 
 @scenario("camera_conflict")

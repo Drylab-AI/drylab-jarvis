@@ -47,6 +47,26 @@ object CameraJpeg {
         val uvPixStride = uPlane.pixelStride
         val chromaH = h / 2
         val chromaW = w / 2
+
+        // Fast path: most Pixel camera HALs hand out semi-planar chroma where
+        // the V plane already IS interleaved V,U,V,U (NV21) with U one byte
+        // behind. Then each chroma row is a single bulk copy instead of a
+        // per-byte loop. The per-byte loop cost ~100 ms per 640x480 frame and
+        // capped the assistant camera at ~8 fps.
+        if (uvPixStride == 2 && vPlane.pixelStride == 2 &&
+            vPlane.rowStride == uvRowStride && isNv21Layout(uBuf, vBuf)
+        ) {
+            val rowBytes = chromaW * 2 - 1 // last U of the row lives in the U plane
+            for (row in 0 until chromaH) {
+                val off = row * uvRowStride
+                vBuf.position(off)
+                vBuf.get(nv21, pos, minOf(rowBytes, vBuf.remaining()))
+                nv21[pos + rowBytes] = uBuf.get(off + (chromaW - 1) * 2)
+                pos += chromaW * 2
+            }
+            vBuf.rewind()
+            return nv21
+        }
         for (row in 0 until chromaH) {
             var uCol = row * uvRowStride
             var vCol = row * uvRowStride
@@ -58,5 +78,19 @@ object CameraJpeg {
             }
         }
         return nv21
+    }
+
+    /**
+     * True when the U and V buffers are views of one interleaved VU block
+     * (U = V + 1 byte), checked by value at a few points: same underlying
+     * memory means vBuf[i+1] == uBuf[i] for every i.
+     */
+    private fun isNv21Layout(u: java.nio.ByteBuffer, v: java.nio.ByteBuffer): Boolean {
+        val n = minOf(u.limit(), v.limit() - 1)
+        if (n < 64) return false
+        for (i in intArrayOf(0, 2, n / 3 and 0x7ffffffe, n / 2 and 0x7ffffffe, (n - 2) and 0x7ffffffe)) {
+            if (v.get(i + 1) != u.get(i)) return false
+        }
+        return true
     }
 }

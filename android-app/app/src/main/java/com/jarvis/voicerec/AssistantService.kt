@@ -65,9 +65,18 @@ class AssistantService : LifecycleService() {
 
         private const val IN_RATE = 16_000
         private const val OUT_RATE = 24_000
-        private const val CAM_W = 768
-        private const val CAM_H = 768
-        private const val CAM_JPEG_QUALITY = 70
+        // 640x480 @ ~10 fps, q60 (~40 KB/frame, ~400 KB/s on the LAN): smooth
+        // in the PC live window. The server forwards only the newest frame,
+        // at most 1 fps, to Gemini, so this doesn't grow the model's context.
+        private const val CAM_W = 640
+        private const val CAM_H = 480
+        private const val CAM_JPEG_QUALITY = 60
+        private const val CAM_FRAME_MS = 100L
+
+        /** True while the assistant holds the back camera. */
+        @Volatile
+        var cameraBusy: Boolean = false
+            private set
 
         private const val OP_MIC_PCM: Byte = 0x01
         private const val OP_CAM_JPEG: Byte = 0x02
@@ -93,6 +102,7 @@ class AssistantService : LifecycleService() {
     private val camExecutor = Executors.newSingleThreadExecutor()
     @Volatile private var cameraOn = false
     @Volatile private var lastFrameMs = 0L
+    private var encodedFrames = 0L
 
     private var wakeLock: PowerManager.WakeLock? = null
     private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
@@ -429,7 +439,16 @@ class AssistantService : LifecycleService() {
             emit("""{"type":"error","message":"camera permission not granted"}""")
             return
         }
+        if (CameraService.isStreaming) {
+            // Both share one CameraProvider and each unbinds the other's use
+            // cases, so the second one silently killed the first. Refuse
+            // instead of breaking the Volume-Down stream.
+            Timeline.mark("cam_refused", "by=volume_down_stream")
+            emit("""{"type":"error","message":"camera busy: the Volume-Down stream is on"}""")
+            return
+        }
         cameraOn = true
+        cameraBusy = true
         promoteToCamera()
         val future = ProcessCameraProvider.getInstance(this)
         future.addListener({
@@ -438,6 +457,8 @@ class AssistantService : LifecycleService() {
                 cameraProvider = provider
                 Log.i(TAG, "binding back camera for the assistant")
                 val analysis = ImageAnalysis.Builder()
+                    // The HAL picked 1080x1080 for the old 768x768 target;
+                    // 640x480 is 4x fewer pixels to convert and encode.
                     .setTargetResolution(Size(CAM_W, CAM_H))
                     .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                     .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
@@ -445,9 +466,18 @@ class AssistantService : LifecycleService() {
                 analysis.setAnalyzer(camExecutor) { image ->
                     try {
                         val now = System.currentTimeMillis()
-                        if (cameraOn && now - lastFrameMs >= 1000) {
-                            lastFrameMs = now
+                        // Schedule against a fixed 100 ms grid instead of
+                        // "100 ms since the last frame": the analyser only
+                        // ticks every ~33 ms, so "since last" always waited
+                        // for the 4th tick and settled at 7.5 fps (measured).
+                        if (cameraOn && now >= lastFrameMs) {
+                            lastFrameMs = maxOf(lastFrameMs + CAM_FRAME_MS, now - CAM_FRAME_MS)
+                            val t0 = System.nanoTime()
                             val jpeg = CameraJpeg.toJpeg(image, CAM_JPEG_QUALITY)
+                            if (++encodedFrames % 50 == 1L) {
+                                Timeline.mark("cam_encode", "ms=${(System.nanoTime() - t0) / 1_000_000} " +
+                                    "size=${image.width}x${image.height} bytes=${jpeg?.size}")
+                            }
                             if (jpeg != null) {
                                 val frame = ByteArray(1 + jpeg.size)
                                 frame[0] = OP_CAM_JPEG
@@ -468,13 +498,18 @@ class AssistantService : LifecycleService() {
             } catch (e: Exception) {
                 Log.e(TAG, "camera start failed", e)
                 cameraOn = false
+                cameraBusy = false
             }
         }, ContextCompat.getMainExecutor(this))
     }
 
     private fun stopCamera() {
+        val wasOn = cameraOn
         cameraOn = false
-        try { cameraProvider?.unbindAll() } catch (_: Exception) {}
+        cameraBusy = false
+        // Only unbind what we bound: unbindAll() on a camera we never opened
+        // would kill a running Volume-Down stream (shared CameraProvider).
+        if (wasOn) try { cameraProvider?.unbindAll() } catch (_: Exception) {}
         cameraProvider = null
         demoteFromCamera()
         Timeline.mark("camera_off")

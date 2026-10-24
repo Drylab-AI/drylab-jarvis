@@ -65,7 +65,12 @@ class CamSession:
     _slot_counter = 0
     _slot_lock = threading.Lock()
 
-    def __init__(self, sid: str, device: str, recordings_dir: Path):
+    def __init__(self, sid: str, device: str, recordings_dir: Path,
+                 with_audio: bool = True):
+        # with_audio=False: video only (the assistant's camera, whose audio is
+        # the conversation going to Gemini). Without it ffmpeg would wait
+        # forever on an audio FIFO nobody writes to, and save nothing.
+        self.with_audio = with_audio
         self.sid = _safe(sid, "session")
         self.device = _safe(device, "device")
         self.recordings_dir = recordings_dir
@@ -109,15 +114,16 @@ class CamSession:
             # Audio FIFO: ffmpeg reads it as a second input. Create before launch.
             fifo_dir = Path("/tmp/jarvis_cam")
             fifo_dir.mkdir(parents=True, exist_ok=True)
-            self.audio_fifo = fifo_dir / f"{self.sid}.aac"
-            try:
-                if self.audio_fifo.exists():
-                    self.audio_fifo.unlink()
-                os.mkfifo(self.audio_fifo)
-            except FileExistsError:
-                pass
-            except OSError:
-                self.audio_fifo = None
+            self.audio_fifo = fifo_dir / f"{self.sid}.aac" if self.with_audio else None
+            if self.audio_fifo is not None:
+                try:
+                    if self.audio_fifo.exists():
+                        self.audio_fifo.unlink()
+                    os.mkfifo(self.audio_fifo)
+                except FileExistsError:
+                    pass
+                except OSError:
+                    self.audio_fifo = None
 
             cmd = [FFMPEG, "-hide_banner", "-loglevel", "warning", "-y",
                    # Video from stdin (MJPEG). Stamp each frame with the wall
@@ -445,12 +451,12 @@ class CamRegistry:
         self.sessions: dict[str, CamSession] = {}
         self.lock = threading.Lock()
 
-    def get_or_create(self, sid: str, device: str) -> CamSession:
+    def get_or_create(self, sid: str, device: str, with_audio: bool = True) -> CamSession:
         key = _safe(sid, "session")
         with self.lock:
             s = self.sessions.get(key)
             if s is None:
-                s = CamSession(key, device, self.recordings_dir)
+                s = CamSession(key, device, self.recordings_dir, with_audio=with_audio)
                 self.sessions[key] = s
             return s
 

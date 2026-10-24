@@ -350,6 +350,10 @@ async def assistant_ws(websocket: WebSocket) -> None:
     link = PhoneLink(send_json, send_bytes)
     tools = ToolRouter(link)
     bridge = GeminiLiveBridge(link, tools)
+    pc_cam = AssistantCamToPc(bridge)
+    # The camera window/recording ends with the camera, not the chat.
+    tools.on_camera_closed = pc_cam.finish
+    tools.on_camera_opened = pc_cam.armed
 
     # Run the Gemini session concurrently with the phone receive loop.
     ACTIVE_BRIDGES.append(bridge)
@@ -366,7 +370,10 @@ async def assistant_ws(websocket: WebSocket) -> None:
                 if op == OP_MIC_PCM:
                     bridge.push_mic(payload)
                 elif op == OP_CAM_JPEG:
+                    # Same frames, two consumers: Gemini (newest frame, at
+                    # most 1 fps) and the PC live window + mp4 (every frame).
                     bridge.push_cam(payload)
+                    pc_cam.frame(payload)
                 continue
             text = msg.get("text")
             if text:
@@ -385,11 +392,75 @@ async def assistant_ws(websocket: WebSocket) -> None:
         if bridge in ACTIVE_BRIDGES:
             ACTIVE_BRIDGES.remove(bridge)
         bridge.close()
+        await pc_cam.finish()
         run_task.cancel()
         try:
             await run_task
         except Exception:  # noqa: BLE001
             pass
+
+
+class AssistantCamToPc:
+    """Shows the assistant's camera live on the PC and saves it as an mp4,
+    while the same frames feed Gemini.
+
+    Reuses the Volume-Down camera machinery (CamSession: ffmpeg mp4 + the
+    /cam/view live window), video-only. The session starts on the first frame
+    and ends when the camera is closed or the chat ends.
+    """
+
+    def __init__(self, bridge: GeminiLiveBridge) -> None:
+        self.bridge = bridge
+        self.sid: str | None = None
+        self._starting = False
+        # Frames already in flight when the camera closes must not open a
+        # new window/recording (seen: a second 5 s mp4 after every close).
+        # Re-armed by open_camera.
+        self.closed = False
+
+    def armed(self) -> None:
+        self.closed = False
+
+    def frame(self, jpeg: bytes) -> None:
+        if self.closed:
+            return
+        if self.sid is None:
+            if self._starting:
+                return
+            self._starting = True
+            asyncio.create_task(self._start(jpeg))
+            return
+        s = cam_registry.get(self.sid)
+        if s is not None:
+            s.write_video(jpeg)  # non-blocking: queued for ffmpeg's thread
+
+    async def _start(self, first: bytes) -> None:
+        sid = f"assist-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}-{uuid.uuid4().hex[:6]}"
+        s = cam_registry.get_or_create(sid, "assistant", with_audio=False)
+        try:
+            # ensure_started spawns ffmpeg (and the window); keep it off the loop.
+            await asyncio.to_thread(s.ensure_started)
+        except Exception as exc:  # noqa: BLE001
+            print(f"assistant camera to PC failed: {exc}")
+            cam_registry.finish(sid)
+            self._starting = False
+            return
+        s.write_video(first)
+        self.sid = sid
+        self.bridge.cam_sid = sid
+        self._starting = False
+        print(f"JARVIS_T {datetime.now().timestamp():.3f} pc_cam_start sid={sid}", flush=True)
+
+    async def finish(self) -> None:
+        self.closed = True
+        sid, self.sid = self.sid, None
+        self.bridge.cam_sid = ""
+        if sid is None:
+            return
+        # Finalising waits for ffmpeg to write the mp4 (seconds): off the loop.
+        meta = await asyncio.to_thread(cam_registry.finish, sid)
+        print(f"JARVIS_T {datetime.now().timestamp():.3f} pc_cam_saved sid={sid} "
+              f"path={(meta or {}).get('path')}", flush=True)
 
 
 @app.get("/cam/live/{sid}")
@@ -427,9 +498,11 @@ async def cam_live(sid: str) -> StreamingResponse:
                 )
             else:
                 idle += 1
-                if idle > 600:  # ~30 s with no new frame -> end
+                if idle > 1500:  # ~30 s with no new frame -> end
                     break
-            await anyio.sleep(0.05)
+            # Poll at 50 Hz: at the old 20 Hz, a 10 fps source aliased down
+            # to ~7.8 fps whenever two frames landed in one tick.
+            await anyio.sleep(0.02)
 
     return StreamingResponse(
         gen(),
