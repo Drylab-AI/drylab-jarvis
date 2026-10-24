@@ -1,0 +1,30 @@
+49180433 assist_start test=true
+49180464 ws_open 
+49180473 state connecting
+49181366 state listening
+49182096 state speaking
+49182097 reply_audio_start source=model
+49185056 state listening
+49187333 mic_clip_queued name=q_long trigger=now delay=0
+49187353 mic_clip_start name=q_long
+49187420 mic_clip_queued name=interrupt_stop trigger=speaking delay=1500
+49187603 local_speech_start 
+49194634 mic_clip_end name=q_long
+49194960 local_turn_end speech_ms=6912
+49195041 filler_start 
+49195618 state speaking
+49195625 filler_cut 
+49195625 reply_audio_start source=model
+49197153 mic_clip_start name=interrupt_stop
+49197237 local_cut_in p=1.00 rms=3232
+49197307 reply_audio_start source=model
+49197320 local_cut_in p=1.00 rms=9210
+49197351 server_flush 
+49197355 state listening
+49200234 mic_clip_end name=interrupt_stop
+49200559 local_turn_end speech_ms=2912
+49200636 filler_start 
+49201399 filler_end 
+49201605 state speaking
+49201606 reply_audio_start source=model
+49202643 state listening

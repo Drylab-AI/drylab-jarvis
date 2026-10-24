@@ -1,0 +1,19 @@
+49211813 assist_start test=true
+49211879 ws_open 
+49211884 state connecting
+49212779 state listening
+49212988 local_speech_start 
+49213526 state speaking
+49213526 reply_audio_start source=model
+49213749 local_turn_end speech_ms=672
+49216538 state listening
+49217550 local_speech_start 
+49218747 local_turn_end speech_ms=1088
+49218836 filler_start 
+49219206 state speaking
+49219215 filler_cut 
+49219216 reply_audio_start source=model
+49230512 state listening
+49230831 local_speech_start 
+49231309 local_turn_end speech_ms=384
+49232067 local_speech_start 

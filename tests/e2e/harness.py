@@ -128,20 +128,24 @@ def turn(clip: str, reply_timeout: float = 20) -> Turn:
     if end is None:
         return Turn(clip, None, None, None, None)
     deadline = time.time() + reply_timeout
-    model = filler = cut = None
+    model = filler = None
     while time.time() < deadline and model is None:
         for e in phone.timeline(end.t):
             if e.name == "reply_audio_start" and "source=model" in e.detail and model is None:
                 model = e.t - end.t
             if e.name == "filler_start" and filler is None:
                 filler = e.t - end.t
-            if e.name == "filler_cut" and cut is None:
-                cut = e
         time.sleep(0.25)
-    cut_ms = None
-    if cut is not None and model is not None:
-        cut_ms = cut.t - (end.t + model)
     wait_quiet(end.t)
+    # How long the filler overlapped the real reply: 0 when it had already
+    # finished (or was cut) by the time model audio started.
+    cut_ms = None
+    if filler is not None and model is not None:
+        tl = phone.timeline(end.t)
+        fend = next((e.t - end.t for e in tl if e.name in ("filler_end", "filler_cut")
+                     and e.t - end.t >= filler), None)
+        if fend is not None:
+            cut_ms = max(0, fend - model)
     return Turn(clip, end.t, filler, model, cut_ms)
 
 

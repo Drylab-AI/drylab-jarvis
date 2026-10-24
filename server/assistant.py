@@ -52,6 +52,8 @@ IS_LEGACY_MODEL = "2.5" in LIVE_MODEL
 VAD_SILENCE_MS = int(os.environ.get("JARVIS_VAD_SILENCE_MS", "450"))
 VOICE = os.environ.get("JARVIS_VOICE", "Charon")
 MIC_QUEUE_CHUNKS = 10
+# Set once google_search grounding hits its quota (see GeminiLiveBridge.run).
+_SEARCH_QUOTA_OUT = [False]
 
 SYSTEM_INSTRUCTION = os.environ.get(
     "JARVIS_SYSTEM_PROMPT",
@@ -171,7 +173,12 @@ class GeminiLiveBridge:
         # cancellation and so _receive never waits on a tool).
         self._tool_tasks: dict[str, asyncio.Task] = {}
         self._last_state = ""
-        self._use_search = os.environ.get("JARVIS_SEARCH", "1") != "0"
+        # Process-wide: once the search-grounding quota is known to be used
+        # up, every new session skips it instead of paying a failed connect
+        # first (each failed attempt cost ~1 s plus a timeout on the next).
+        self._use_search = (
+            os.environ.get("JARVIS_SEARCH", "1") != "0" and not _SEARCH_QUOTA_OUT[0]
+        )
         self._session = None
         self._resume_handle: str | None = None
         self._closed = False
@@ -301,6 +308,7 @@ class GeminiLiveBridge:
                     # whole connection is refused. Keep the conversation;
                     # drop only web search.
                     self._use_search = False
+                    _SEARCH_QUOTA_OUT[0] = True
                     config = self._build_config(types)
                     _tlog("search_disabled", reason="quota")
                     continue
@@ -370,10 +378,11 @@ class GeminiLiveBridge:
         native-audio model rejects with "1007 ... CONTENT_TYPE_AUDIO is not
         supported for this model configuration" and then drops the socket.
         """
+        # Short on purpose: the greeting is the first thing the user waits for,
+        # and a longer instruction measurably delays the first audio.
         prompt = os.environ.get(
             "JARVIS_GREETING",
-            "The user just opened you. Greet them in one short sentence and "
-            "ask what they would like to do. Do not call any tools yet.",
+            "Greet the user in under six words, e.g. 'Hey, what's up?'. No tools.",
         )
         try:
             await session.send_realtime_input(text=prompt)

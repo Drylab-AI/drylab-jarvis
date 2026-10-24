@@ -1,0 +1,7 @@
+48999150 assist_start test=true
+48999204 ws_open 
+48999342 state connecting
+49002826 state listening
+49003575 state speaking
+49003576 reply_audio_start source=model
+49007283 state listening

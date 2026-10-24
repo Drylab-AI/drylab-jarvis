@@ -1,0 +1,33 @@
+48908968 assist_start test=true
+48908997 ws_open 
+48909136 state connecting
+48912659 state listening
+48913463 state speaking
+48913464 reply_audio_start source=model
+48915497 state listening
+48917451 mic_clip_queued name=q_long trigger=now delay=0
+48917489 mic_clip_start name=q_long
+48917600 mic_clip_queued name=interrupt_stop trigger=speaking delay=1500
+48917734 local_speech_start 
+48924768 mic_clip_end name=q_long
+48925131 local_turn_end speech_ms=6912
+48925132 filler_start 
+48926597 state speaking
+48926598 reply_audio_start source=model
+48928129 mic_clip_start name=interrupt_stop
+48928140 vad_dbg p=0.89 rms=1826 speech=32 loud=32
+48928171 vad_dbg p=1.00 rms=3482 speech=64 loud=64
+48928216 vad_dbg p=1.00 rms=3409 speech=96 loud=96
+48928255 vad_dbg p=1.00 rms=4950 speech=128 loud=128
+48928295 vad_dbg p=1.00 rms=9205 speech=160 loud=160
+48928298 vad_dbg p=1.00 rms=7762 speech=192 loud=192
+48928335 vad_dbg p=1.00 rms=6269 speech=224 loud=224
+48928336 local_cut_in p=1.00 rms=6269
+48928351 server_flush 
+48928357 state listening
+48931208 mic_clip_end name=interrupt_stop
+48931573 local_turn_end speech_ms=2912
+48931574 filler_start 
+48932506 state speaking
+48932507 reply_audio_start source=model
+48934273 state listening

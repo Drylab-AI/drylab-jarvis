@@ -1,0 +1,31 @@
+[
+  {
+    "scenario": "cut_in",
+    "ok": false,
+    "error": "",
+    "checks": [
+      {
+        "name": "Jarvis was talking when the user cut in",
+        "ok": true,
+        "detail": ""
+      },
+      {
+        "name": "playback stopped within 150 ms of the user speaking",
+        "ok": false,
+        "detail": "207 ms via local_cut_in"
+      },
+      {
+        "name": "Jarvis then answered the new question (2+2)",
+        "ok": true,
+        "detail": "ad, he was fascinated by the warm, yeasty smell wafting from the nearby village bakery every morning. wait, stop. actually, what is 2 + 2? two plus two is four."
+      }
+    ],
+    "numbers": {
+      "cut_in_ms": 207,
+      "cut_in_by": "local_cut_in"
+    },
+    "evidence": [
+      "tests/logs/interaction/evidence/dbg/cut_in/timeline.txt"
+    ]
+  }
+]

@@ -43,7 +43,7 @@ android {
     }
     // Keep the wake-word models uncompressed in the APK so they load fast.
     androidResources {
-        noCompress += "onnx"
+        noCompress += listOf("onnx", "pcm")
     }
 }
 

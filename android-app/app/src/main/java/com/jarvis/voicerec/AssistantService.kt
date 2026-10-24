@@ -85,8 +85,9 @@ class AssistantService : LifecycleService() {
     private val micStop = AtomicBoolean(false)
     private var audioRecord: AudioRecord? = null
 
-    private var audioTrack: AudioTrack? = null
-    @Volatile private var playbackGen = 0  // bumped on flush to drop stale audio
+    @Volatile private var player: Player? = null
+    @Volatile private var turnTaker: LocalTurnTaker? = null
+    private var fillers: List<ByteArray> = emptyList()
 
     private var cameraProvider: ProcessCameraProvider? = null
     private val camExecutor = Executors.newSingleThreadExecutor()
@@ -341,80 +342,81 @@ class AssistantService : LifecycleService() {
         }
     }
 
-    /** Hook for every 40 ms mic frame (real or scripted). */
+    /** Every 40 ms mic frame (real or scripted) feeds the local layer. */
     private fun onMicFrame(samples: ShortArray) {
-        // Filled in by the on-phone interaction layer (LocalTurnTaker).
+        try {
+            turnTaker?.accept(samples)
+        } catch (e: Exception) {
+            Log.w(TAG, "turn-taker error: ${e.message}")
+        }
     }
 
     // ---- playback (24 kHz PCM down) ----------------------------------------
 
     private fun initAudioTrack() {
-        val minBuf = AudioTrack.getMinBufferSize(
-            OUT_RATE,
-            AudioFormat.CHANNEL_OUT_MONO,
-            AudioFormat.ENCODING_PCM_16BIT,
-        )
-        val track = AudioTrack.Builder()
-            .setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_MEDIA)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                    .build()
-            )
-            .setAudioFormat(
-                AudioFormat.Builder()
-                    .setSampleRate(OUT_RATE)
-                    .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                    .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
-                    .build()
-            )
-            .setBufferSizeInBytes(maxOf(minBuf, OUT_RATE)) // ~0.5s headroom
-            .setTransferMode(AudioTrack.MODE_STREAM)
-            .build()
-        track.play()
-        audioTrack = track
-    }
+        val p = Player(OUT_RATE)
+        p.tap = playedOut
+        p.listener = object : Player.Listener {
+            override fun onReplyStart(source: String) {
+                val now = Timeline.now()
+                // A reply starts when sound begins after a quiet gap; 600 ms
+                // is longer than any gap inside one streamed reply.
+                if (source == "filler") {
+                    Timeline.mark("filler_start")
+                } else if (now - lastPcmAt > 600) {
+                    Timeline.mark("reply_audio_start", "source=model")
+                    scriptedMic.onAssistantSpeaking(now)
+                }
+                if (source == "model") lastPcmAt = now
+            }
 
-    /**
-     * A reply starts when audio arrives after a quiet gap. 600 ms is longer
-     * than any gap inside one streamed reply but shorter than a turn.
-     */
-    private fun markReplyAudio(source: String) {
-        val now = Timeline.now()
-        if (now - lastPcmAt > 600) {
-            Timeline.mark("reply_audio_start", "source=$source")
-            scriptedMic.onAssistantSpeaking(now)
+            override fun onIdle() {}
         }
-        lastPcmAt = now
+        p.start()
+        player = p
+        loadInteractionLayer()
     }
 
-    private fun recordPlayed(pcm: ByteArray) {
-        val out = playedOut ?: return
-        runCatching { out.write(pcm) }
+    /** Silero VAD + bundled fillers. Optional: the assistant works without. */
+    private fun loadInteractionLayer() {
+        fillers = runCatching {
+            assets.list("fillers")!!.filter { it.endsWith(".pcm") }.sorted()
+                .map { name -> assets.open("fillers/$name").use { it.readBytes() } }
+        }.getOrDefault(emptyList())
+        turnTaker = runCatching {
+            LocalTurnTaker(
+                assets.open("vad/silero_vad.onnx").use { it.readBytes() },
+                object : LocalTurnTaker.Actions {
+                    override fun assistantSpeaking(): Boolean = player?.playing != null
+                    override fun lastReplyAt(): Long = lastPcmAt
+                    override fun cutIn() {
+                        player?.stop()
+                    }
+                    override fun playFiller(): Boolean = playRandomFiller()
+                },
+            )
+        }.onFailure { Log.w(TAG, "local turn-taker unavailable: ${it.message}") }.getOrNull()
+        Log.i(TAG, "interaction layer: vad=${turnTaker != null} fillers=${fillers.size}")
+    }
+
+    private var lastFiller = -1
+
+    private fun playRandomFiller(): Boolean {
+        if (fillers.isEmpty()) return false
+        // Never the same clip twice in a row: repetition is what makes
+        // canned fillers sound robotic.
+        var i = (fillers.indices).random()
+        if (fillers.size > 1 && i == lastFiller) i = (i + 1) % fillers.size
+        lastFiller = i
+        return player?.playFiller(fillers[i]) == true
     }
 
     private fun playPcm(pcm: ByteArray) {
-        markReplyAudio("model")
-        recordPlayed(pcm)
-        val track = audioTrack ?: return
-        val gen = playbackGen
-        // Blocking write on the WS reader thread is fine (OkHttp dispatches
-        // messages serially); if a flush bumped the generation, skip.
-        if (gen != playbackGen) return
-        try {
-            track.write(pcm, 0, pcm.size)
-        } catch (_: Exception) {
-        }
+        player?.enqueueModel(pcm)
     }
 
     private fun flushPlayback() {
-        playbackGen++
-        try {
-            audioTrack?.pause()
-            audioTrack?.flush()
-            audioTrack?.play()
-        } catch (_: Exception) {
-        }
+        player?.stop()
     }
 
     // ---- camera on demand (JPEG up ~1 fps) ---------------------------------
@@ -491,10 +493,10 @@ class AssistantService : LifecycleService() {
         Timeline.mark("assist_stop")
         try { ws?.close(1000, "bye") } catch (_: Exception) {}
         ws = null
-        try {
-            audioTrack?.pause(); audioTrack?.flush(); audioTrack?.release()
-        } catch (_: Exception) {}
-        audioTrack = null
+        player?.release()
+        player = null
+        turnTaker?.close()
+        turnTaker = null
         releaseWakeLock()
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()

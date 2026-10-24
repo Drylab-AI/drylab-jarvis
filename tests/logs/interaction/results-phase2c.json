@@ -1,0 +1,163 @@
+[
+  {
+    "scenario": "wake_greeting",
+    "ok": true,
+    "error": "",
+    "checks": [
+      {
+        "name": "wake word fired on 'hey jarvis'",
+        "ok": true,
+        "detail": ""
+      },
+      {
+        "name": "assistant opened from the wake word",
+        "ok": true,
+        "detail": ""
+      },
+      {
+        "name": "greeting audio within 2500 ms of wake",
+        "ok": true,
+        "detail": "2243 ms"
+      }
+    ],
+    "numbers": {
+      "greet_ms": 2243,
+      "harness_to_greet_ms": 3085
+    },
+    "evidence": [
+      "tests/logs/interaction/evidence/phase2c/wake_greeting/timeline.txt"
+    ]
+  },
+  {
+    "scenario": "plain_latency",
+    "ok": false,
+    "error": "",
+    "checks": [
+      {
+        "name": "every turn got a spoken reply",
+        "ok": true,
+        "detail": "10/10"
+      },
+      {
+        "name": "median end-of-speech -> model audio <= 1000 ms",
+        "ok": false,
+        "detail": "1105 ms"
+      },
+      {
+        "name": "slowest turn <= 1600 ms",
+        "ok": true,
+        "detail": "1191 ms"
+      }
+    ],
+    "numbers": {
+      "per_turn_model_ms": [
+        1069,
+        1183,
+        1191,
+        1095,
+        1117,
+        1093,
+        1132,
+        1116,
+        1072,
+        1033
+      ],
+      "per_turn_first_sound_ms": [
+        247,
+        249,
+        245,
+        209,
+        249,
+        249,
+        246,
+        246,
+        244,
+        205
+      ],
+      "model_n": 10,
+      "model_median_ms": 1105,
+      "model_p90_ms": 1183,
+      "model_max_ms": 1191,
+      "model_min_ms": 1033,
+      "first_sound_n": 10,
+      "first_sound_median_ms": 246,
+      "first_sound_p90_ms": 249,
+      "first_sound_max_ms": 249,
+      "first_sound_min_ms": 205
+    },
+    "evidence": [
+      "tests/logs/interaction/evidence/phase2c/plain_latency/timeline.txt"
+    ]
+  },
+  {
+    "scenario": "filler",
+    "ok": true,
+    "error": "",
+    "checks": [
+      {
+        "name": "filler within 350 ms whenever the model took >300 ms",
+        "ok": true,
+        "detail": "[211, 243, 244]"
+      },
+      {
+        "name": "filler cut within 100 ms of real audio",
+        "ok": true,
+        "detail": "[0, 0, 0]"
+      },
+      {
+        "name": "at most one filler per turn",
+        "ok": true,
+        "detail": ""
+      },
+      {
+        "name": "no filler after 'yes' / 'stop'",
+        "ok": true,
+        "detail": "[None, None]"
+      }
+    ],
+    "numbers": {
+      "turns": [
+        {
+          "clip": "q_moon",
+          "end_ms": 49457013,
+          "filler_ms": 211,
+          "model_ms": 1140,
+          "filler_cut_ms": 0
+        },
+        {
+          "clip": "q_tall",
+          "end_ms": 49467133,
+          "filler_ms": 243,
+          "model_ms": 1906,
+          "filler_cut_ms": 0
+        },
+        {
+          "clip": "q_ocean",
+          "end_ms": 49476852,
+          "filler_ms": 244,
+          "model_ms": 948,
+          "filler_cut_ms": 0
+        }
+      ],
+      "short_turns": [
+        {
+          "clip": "yes",
+          "end_ms": 49484173,
+          "filler_ms": null,
+          "model_ms": 2302,
+          "filler_cut_ms": null
+        },
+        {
+          "clip": "stop",
+          "end_ms": 49490532,
+          "filler_ms": null,
+          "model_ms": 1344,
+          "filler_cut_ms": null
+        }
+      ]
+    },
+    "evidence": [
+      "tests/logs/interaction/evidence/phase2c/filler/timeline.txt"
+    ]
+  }
+]

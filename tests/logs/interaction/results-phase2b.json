@@ -1,0 +1,225 @@
+[
+  {
+    "scenario": "wake_greeting",
+    "ok": false,
+    "error": "",
+    "checks": [
+      {
+        "name": "wake word fired on 'hey jarvis'",
+        "ok": true,
+        "detail": ""
+      },
+      {
+        "name": "assistant opened from the wake word",
+        "ok": true,
+        "detail": ""
+      },
+      {
+        "name": "greeting audio within 2500 ms of wake",
+        "ok": false,
+        "detail": "5226 ms"
+      }
+    ],
+    "numbers": {
+      "greet_ms": 5226
+    },
+    "evidence": [
+      "tests/logs/interaction/evidence/phase2b/wake_greeting/timeline.txt"
+    ]
+  },
+  {
+    "scenario": "plain_latency",
+    "ok": false,
+    "error": "",
+    "checks": [
+      {
+        "name": "every turn got a spoken reply",
+        "ok": true,
+        "detail": "10/10"
+      },
+      {
+        "name": "median end-of-speech -> model audio <= 1000 ms",
+        "ok": false,
+        "detail": "1359 ms"
+      },
+      {
+        "name": "slowest turn <= 1600 ms",
+        "ok": false,
+        "detail": "1637 ms"
+      }
+    ],
+    "numbers": {
+      "per_turn_model_ms": [
+        1371,
+        1637,
+        1320,
+        1455,
+        1578,
+        1203,
+        1280,
+        1348,
+        1314,
+        1382
+      ],
+      "per_turn_first_sound_ms": [
+        446,
+        365,
+        404,
+        406,
+        409,
+        404,
+        406,
+        365,
+        402,
+        328
+      ],
+      "model_n": 10,
+      "model_median_ms": 1359,
+      "model_p90_ms": 1578,
+      "model_max_ms": 1637,
+      "model_min_ms": 1203,
+      "first_sound_n": 10,
+      "first_sound_median_ms": 404,
+      "first_sound_p90_ms": 409,
+      "first_sound_max_ms": 446,
+      "first_sound_min_ms": 328
+    },
+    "evidence": [
+      "tests/logs/interaction/evidence/phase2b/plain_latency/timeline.txt"
+    ]
+  },
+  {
+    "scenario": "filler",
+    "ok": false,
+    "error": "",
+    "checks": [
+      {
+        "name": "filler within 350 ms whenever the model took >300 ms",
+        "ok": false,
+        "detail": "[410, 405, 287]"
+      },
+      {
+        "name": "filler cut within 100 ms of real audio",
+        "ok": true,
+        "detail": "[0, 0, 0]"
+      },
+      {
+        "name": "at most one filler per turn",
+        "ok": true,
+        "detail": ""
+      },
+      {
+        "name": "no filler after 'yes' / 'stop'",
+        "ok": true,
+        "detail": "[None, None]"
+      }
+    ],
+    "numbers": {
+      "turns": [
+        {
+          "clip": "q_moon",
+          "end_ms": 49127997,
+          "filler_ms": 410,
+          "model_ms": 1046,
+          "filler_cut_ms": 0
+        },
+        {
+          "clip": "q_tall",
+          "end_ms": 49140796,
+          "filler_ms": 405,
+          "model_ms": 1149,
+          "filler_cut_ms": 0
+        },
+        {
+          "clip": "q_ocean",
+          "end_ms": 49152797,
+          "filler_ms": 287,
+          "model_ms": 952,
+          "filler_cut_ms": 0
+        }
+      ],
+      "short_turns": [
+        {
+          "clip": "yes",
+          "end_ms": 49162476,
+          "filler_ms": null,
+          "model_ms": 1059,
+          "filler_cut_ms": null
+        },
+        {
+          "clip": "stop",
+          "end_ms": 49170196,
+          "filler_ms": null,
+          "model_ms": 1155,
+          "filler_cut_ms": null
+        }
+      ]
+    },
+    "evidence": [
+      "tests/logs/interaction/evidence/phase2b/filler/timeline.txt"
+    ]
+  },
+  {
+    "scenario": "cut_in",
+    "ok": true,
+    "error": "",
+    "checks": [
+      {
+        "name": "Jarvis was talking when the user cut in",
+        "ok": true,
+        "detail": ""
+      },
+      {
+        "name": "playback stopped within 150 ms of the user speaking",
+        "ok": true,
+        "detail": "84 ms via local_cut_in"
+      },
+      {
+        "name": "Jarvis then answered the new question (2+2)",
+        "ok": true,
+        "detail": "sion for pastry. while other dragons hoarded gold, ignis collected rare grains and dreamed of the perfect loaf wait, stop. actually, what is 2 + 2? that's four."
+      }
+    ],
+    "numbers": {
+      "cut_in_ms": 84,
+      "cut_in_by": "local_cut_in"
+    },
+    "evidence": [
+      "tests/logs/interaction/evidence/phase2b/cut_in/timeline.txt"
+    ]
+  },
+  {
+    "scenario": "no_self_interrupt",
+    "ok": true,
+    "error": "",
+    "checks": [
+      {
+        "name": "question delivered",
+        "ok": true,
+        "detail": "HTTP 200"
+      },
+      {
+        "name": "Jarvis started answering out loud",
+        "ok": true,
+        "detail": ""
+      },
+      {
+        "name": "answer lasted a while (>= 8 s)",
+        "ok": true,
+        "detail": "12851 ms"
+      },
+      {
+        "name": "zero self-interruptions from its own voice",
+        "ok": true,
+        "detail": ""
+      }
+    ],
+    "numbers": {
+      "reply_span_ms": 12851,
+      "self_cut_ins": 0
+    },
+    "evidence": [
+      "tests/logs/interaction/evidence/phase2b/no_self_interrupt/timeline.txt"
+    ]
+  }
+]

@@ -1,0 +1,7 @@
+49337572 assist_start test=true
+49337603 ws_open 
+49337755 state connecting
+49339069 state listening
+49339813 state speaking
+49339815 reply_audio_start source=model
+49341537 state listening

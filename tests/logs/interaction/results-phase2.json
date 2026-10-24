@@ -1,0 +1,191 @@
+[
+  {
+    "scenario": "wake_greeting",
+    "ok": false,
+    "error": "",
+    "checks": [
+      {
+        "name": "wake word fired on 'hey jarvis'",
+        "ok": true,
+        "detail": ""
+      },
+      {
+        "name": "assistant opened from the wake word",
+        "ok": true,
+        "detail": ""
+      },
+      {
+        "name": "greeting audio within 2500 ms of wake",
+        "ok": false,
+        "detail": "5156 ms"
+      }
+    ],
+    "numbers": {
+      "greet_ms": 5156
+    },
+    "evidence": [
+      "tests/logs/interaction/evidence/phase2/wake_greeting/timeline.txt"
+    ]
+  },
+  {
+    "scenario": "plain_latency",
+    "ok": false,
+    "error": "",
+    "checks": [
+      {
+        "name": "every turn got a spoken reply",
+        "ok": true,
+        "detail": "10/10"
+      },
+      {
+        "name": "median end-of-speech -> model audio <= 1000 ms",
+        "ok": false,
+        "detail": "1298 ms"
+      },
+      {
+        "name": "slowest turn <= 1600 ms",
+        "ok": false,
+        "detail": "8434 ms"
+      }
+    ],
+    "numbers": {
+      "per_turn_model_ms": [
+        8434,
+        1378,
+        1450,
+        1372,
+        1293,
+        1119,
+        1231,
+        1303,
+        1179,
+        1113
+      ],
+      "per_turn_first_sound_ms": [
+        401,
+        327,
+        407,
+        367,
+        405,
+        326,
+        402,
+        324,
+        410,
+        363
+      ],
+      "model_n": 10,
+      "model_median_ms": 1298,
+      "model_p90_ms": 1450,
+      "model_max_ms": 8434,
+      "model_min_ms": 1113,
+      "first_sound_n": 10,
+      "first_sound_median_ms": 384,
+      "first_sound_p90_ms": 407,
+      "first_sound_max_ms": 410,
+      "first_sound_min_ms": 324
+    },
+    "evidence": [
+      "tests/logs/interaction/evidence/phase2/plain_latency/timeline.txt"
+    ]
+  },
+  {
+    "scenario": "filler",
+    "ok": false,
+    "error": "",
+    "checks": [
+      {
+        "name": "filler within 350 ms whenever the model took >300 ms",
+        "ok": false,
+        "detail": "[368, 367, 367]"
+      },
+      {
+        "name": "filler cut within 100 ms of real audio",
+        "ok": false,
+        "detail": "[None, 0, -3]"
+      },
+      {
+        "name": "at most one filler per turn",
+        "ok": true,
+        "detail": ""
+      },
+      {
+        "name": "no filler after 'yes' / 'stop'",
+        "ok": true,
+        "detail": "[None, None]"
+      }
+    ],
+    "numbers": {
+      "turns": [
+        {
+          "clip": "q_moon",
+          "end_ms": 48743519,
+          "filler_ms": 368,
+          "model_ms": 1151,
+          "filler_cut_ms": null
+        },
+        {
+          "clip": "q_tall",
+          "end_ms": 48754559,
+          "filler_ms": 367,
+          "model_ms": 1214,
+          "filler_cut_ms": 0
+        },
+        {
+          "clip": "q_ocean",
+          "end_ms": 48763600,
+          "filler_ms": 367,
+          "model_ms": 1071,
+          "filler_cut_ms": -3
+        }
+      ],
+      "short_turns": [
+        {
+          "clip": "yes",
+          "end_ms": 48771039,
+          "filler_ms": null,
+          "model_ms": 1219,
+          "filler_cut_ms": null
+        },
+        {
+          "clip": "stop",
+          "end_ms": 48777359,
+          "filler_ms": null,
+          "model_ms": 1195,
+          "filler_cut_ms": null
+        }
+      ]
+    },
+    "evidence": [
+      "tests/logs/interaction/evidence/phase2/filler/timeline.txt"
+    ]
+  },
+  {
+    "scenario": "cut_in",
+    "ok": false,
+    "error": "",
+    "checks": [
+      {
+        "name": "Jarvis was talking when the user cut in",
+        "ok": true,
+        "detail": ""
+      },
+      {
+        "name": "playback stopped within 150 ms of the user speaking",
+        "ok": false,
+        "detail": "199 ms via server_flush"
+      },
+      {
+        "name": "Jarvis then answered the new question (2+2)",
+        "ok": true,
+        "detail": "d gold, ignis loved the aroma of yeast and the warmth of a perfectly baked loaf. wait stop actually what is 2 + 2? that's an easy one, two plus two equals four."
+      }
+    ],
+    "numbers": {
+      "cut_in_ms": 199,
+      "cut_in_by": "server_flush"
+    },
+    "evidence": [
+      "tests/logs/interaction/evidence/phase2/cut_in/timeline.txt"
+    ]
+  }
+]
