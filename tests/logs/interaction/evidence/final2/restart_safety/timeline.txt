@@ -1,0 +1,34 @@
+52478040 assist_start test=true
+52478114 ws_open 
+52478118 state connecting
+52479401 state listening
+52480009 state speaking
+52480010 reply_audio_start source=model
+52481137 state listening
+52483271 mic_clip_queued name=q_week trigger=now delay=0
+52483281 mic_clip_start name=q_week
+52483487 local_speech_start 
+52484722 mic_clip_end name=q_week
+52484890 local_turn_end speech_ms=1376
+52484893 filler_start 
+52485575 filler_end 
+52485747 state speaking
+52485748 reply_audio_start source=model
+52487600 state listening
+52489713 ws_reconnect why=failure in_ms=500
+52490296 ws_open 
+52490445 state connecting
+52491696 state listening
+52492501 state speaking
+52492502 reply_audio_start source=model
+52494147 state listening
+52496161 mic_clip_queued name=q_legs trigger=now delay=0
+52496162 mic_clip_start name=q_legs
+52496407 local_speech_start 
+52498082 mic_clip_end name=q_legs
+52498327 local_turn_end speech_ms=1888
+52498332 filler_start 
+52499103 filler_end 
+52499564 state speaking
+52499566 reply_audio_start source=model
+52501520 state listening

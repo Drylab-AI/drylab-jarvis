@@ -1,0 +1,10 @@
+52307877 assist_start test=true
+52307945 ws_open 
+52307951 state connecting
+52308800 state listening
+52309335 state speaking
+52309339 reply_audio_start source=model
+52310800 state listening
+52313764 state speaking
+52313765 reply_audio_start source=model
+52323479 state listening

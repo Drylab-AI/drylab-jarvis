@@ -1,0 +1,7 @@
+52088983 assist_start test=true
+52089011 ws_open 
+52089206 state connecting
+52090516 state listening
+52091089 state speaking
+52091091 reply_audio_start source=model
+52092683 state listening

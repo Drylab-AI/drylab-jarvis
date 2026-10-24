@@ -1,0 +1,18 @@
+52456115 assist_start test=true
+52456189 ws_open 
+52456203 state connecting
+52456659 state listening
+52457715 state speaking
+52457725 reply_audio_start source=model
+52458737 state listening
+52460757 mic_clip_queued name=q_capital trigger=now delay=0
+52460757 mic_clip_start name=q_capital
+52460963 local_speech_start 
+52462238 mic_clip_end name=q_capital
+52462445 local_turn_end speech_ms=1440
+52462446 filler_start 
+52463619 filler_end 
+52469089 state speaking
+52469105 reply_audio_start source=model
+52470795 state listening
+52473047 ws_reconnect why=failure in_ms=500

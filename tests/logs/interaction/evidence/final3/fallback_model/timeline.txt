@@ -1,0 +1,18 @@
+52929784 assist_start test=true
+52929846 ws_open 
+52929853 state connecting
+52930277 state listening
+52931547 state speaking
+52931561 reply_audio_start source=model
+52932373 state listening
+52934371 mic_clip_queued name=q_capital trigger=now delay=0
+52934385 mic_clip_start name=q_capital
+52934550 local_speech_start 
+52935865 mic_clip_end name=q_capital
+52936151 local_turn_end speech_ms=1568
+52936157 filler_start 
+52936928 filler_end 
+52940945 state speaking
+52940960 reply_audio_start source=model
+52942758 state listening
+52945299 ws_reconnect why=failure in_ms=500

@@ -1,0 +1,16 @@
+51879344 assist_start test=true
+51879428 ws_open 
+51879430 state connecting
+51880160 local_speech_start 
+51880255 state listening
+51880638 local_turn_end speech_ms=448
+51880776 state speaking
+51880777 reply_audio_start source=model
+51881771 state listening
+51881916 local_speech_start 
+51882400 local_turn_end speech_ms=480
+51883918 local_speech_start 
+51884068 state speaking
+51884070 reply_audio_start source=model
+51886398 local_turn_end speech_ms=2400
+51894115 state listening

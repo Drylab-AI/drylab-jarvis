@@ -1,0 +1,104 @@
+51653957 state listening
+51654650 state speaking
+51654651 reply_audio_start source=model
+51656546 state listening
+51671392 mic_clip_queued name=q_capital trigger=now delay=0
+51671420 mic_clip_start name=q_capital
+51671625 local_speech_start 
+51672900 mic_clip_end name=q_capital
+51673106 local_turn_end speech_ms=1440
+51673110 filler_start 
+51673868 filler_end 
+51674164 state speaking
+51674165 reply_audio_start source=model
+51676176 state listening
+51678269 mic_clip_queued name=q_moon trigger=now delay=0
+51678300 mic_clip_start name=q_moon
+51678544 local_speech_start 
+51680019 mic_clip_end name=q_moon
+51680266 local_turn_end speech_ms=1696
+51680267 filler_start 
+51681087 state speaking
+51681094 filler_cut 
+51681094 reply_audio_start source=model
+51686298 state listening
+51688734 mic_clip_queued name=q_color trigger=now delay=0
+51688740 mic_clip_start name=q_color
+51688902 local_speech_start 
+51691820 mic_clip_end name=q_color
+51692062 local_turn_end speech_ms=3040
+51692064 filler_start 
+51692860 filler_end 
+51693118 state speaking
+51693120 reply_audio_start source=model
+51695655 state listening
+51697976 mic_clip_queued name=q_legs trigger=now delay=0
+51697979 mic_clip_start name=q_legs
+51698182 local_speech_start 
+51699899 mic_clip_end name=q_legs
+51700064 local_turn_end speech_ms=1856
+51700065 filler_start 
+51700906 state speaking
+51700913 filler_cut 
+51700913 reply_audio_start source=model
+51703114 state listening
+51705458 mic_clip_queued name=q_boil trigger=now delay=0
+51705459 mic_clip_start name=q_boil
+51705625 local_speech_start 
+51707540 mic_clip_end name=q_boil
+51707784 local_turn_end speech_ms=2112
+51707785 filler_start 
+51708540 filler_end 
+51708633 state speaking
+51708634 reply_audio_start source=model
+51714066 state listening
+51716576 mic_clip_queued name=q_ocean trigger=now delay=0
+51716580 mic_clip_start name=q_ocean
+51716745 local_speech_start 
+51718579 mic_clip_end name=q_ocean
+51718743 local_turn_end speech_ms=1984
+51718744 filler_start 
+51719473 state speaking
+51719478 filler_cut 
+51719478 reply_audio_start source=model
+51722542 state listening
+51725301 mic_clip_queued name=q_planet trigger=now delay=0
+51725339 mic_clip_start name=q_planet
+51725625 local_speech_start 
+51727780 mic_clip_end name=q_planet
+51728029 local_turn_end speech_ms=2400
+51728030 filler_start 
+51728820 filler_end 
+51728843 state speaking
+51728844 reply_audio_start source=model
+51731442 state listening
+51733976 mic_clip_queued name=q_week trigger=now delay=0
+51733980 mic_clip_start name=q_week
+51734185 local_speech_start 
+51735419 mic_clip_end name=q_week
+51735665 local_turn_end speech_ms=1440
+51735667 filler_start 
+51736574 state speaking
+51736580 filler_cut 
+51736581 reply_audio_start source=model
+51738442 state listening
+51740837 mic_clip_queued name=q_tall trigger=now delay=0
+51740860 mic_clip_start name=q_tall
+51741062 local_speech_start 
+51743020 mic_clip_end name=q_tall
+51743264 local_turn_end speech_ms=2176
+51743265 filler_start 
+51744044 filler_end 
+51744162 state speaking
+51744164 reply_audio_start source=model
+51746920 state listening
+51749671 mic_clip_queued name=q_hello trigger=now delay=0
+51749699 mic_clip_start name=q_hello
+51749945 local_speech_start 
+51751660 mic_clip_end name=q_hello
+51751869 local_turn_end speech_ms=1856
+51751870 filler_start 
+51752618 filler_end 
+51752713 state speaking
+51752713 reply_audio_start source=model
+51756720 state listening

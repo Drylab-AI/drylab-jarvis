@@ -1,0 +1,53 @@
+52688646 assist_start test=true
+52688721 ws_open 
+52688727 state connecting
+52689619 state listening
+52690445 state speaking
+52690447 reply_audio_start source=model
+52691839 state listening
+52693607 mic_clip_queued name=q_moon trigger=now delay=0
+52693647 mic_clip_start name=q_moon
+52693888 local_speech_start 
+52695367 mic_clip_end name=q_moon
+52695612 local_turn_end speech_ms=1696
+52695615 filler_start 
+52696373 filler_end 
+52696848 state speaking
+52696849 reply_audio_start source=model
+52704188 state listening
+52706348 mic_clip_queued name=q_tall trigger=now delay=0
+52706366 mic_clip_start name=q_tall
+52706534 local_speech_start 
+52708526 mic_clip_end name=q_tall
+52708775 local_turn_end speech_ms=2208
+52708777 filler_start 
+52709582 filler_end 
+52709858 state speaking
+52709858 reply_audio_start source=model
+52714651 state listening
+52717184 mic_clip_queued name=q_ocean trigger=now delay=0
+52717207 mic_clip_start name=q_ocean
+52717372 local_speech_start 
+52719207 mic_clip_end name=q_ocean
+52719449 local_turn_end speech_ms=2048
+52719450 filler_start 
+52720401 state speaking
+52720413 filler_cut 
+52720414 reply_audio_start source=model
+52725338 state listening
+52727696 mic_clip_queued name=yes trigger=now delay=0
+52727728 mic_clip_start name=yes
+52727930 local_speech_start 
+52728207 mic_clip_end name=yes
+52728450 local_turn_end speech_ms=480
+52729652 state speaking
+52729653 reply_audio_start source=model
+52731563 state listening
+52733394 mic_clip_queued name=stop trigger=now delay=0
+52733406 mic_clip_start name=stop
+52733735 local_speech_start 
+52733806 mic_clip_end name=stop
+52734052 local_turn_end speech_ms=288
+52735119 state speaking
+52735119 reply_audio_start source=model
+52736844 state listening

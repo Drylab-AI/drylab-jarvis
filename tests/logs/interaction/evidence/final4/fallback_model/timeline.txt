@@ -1,0 +1,19 @@
+53365225 assist_start test=true
+53365278 ws_open 
+53365281 state connecting
+53365698 state listening
+53368094 state speaking
+53368107 reply_audio_start source=model
+53369150 state listening
+53371480 mic_clip_queued name=q_capital trigger=now delay=0
+53371505 mic_clip_start name=q_capital
+53371667 local_speech_start 
+53372985 mic_clip_end name=q_capital
+53373271 local_turn_end speech_ms=1568
+53373275 filler_start 
+53373938 filler_end 
+53379690 state speaking
+53379710 reply_audio_start source=model
+53381231 state listening
+53383600 ws_reconnect why=failure in_ms=500
+53384127 ws_open 

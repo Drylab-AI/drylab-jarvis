@@ -1,0 +1,7 @@
+52984990 assist_start test=true
+52985014 ws_open 
+52985179 state connecting
+52986539 state listening
+52987229 state speaking
+52987230 reply_audio_start source=model
+52988424 state listening

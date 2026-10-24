@@ -1,0 +1,7 @@
+51631360 assist_start test=true
+51631435 ws_open 
+51631618 state connecting
+51632988 state listening
+51633596 state speaking
+51633597 reply_audio_start source=model
+51634937 state listening

@@ -1,0 +1,10 @@
+53204989 assist_start test=true
+53205073 ws_open 
+53205079 state connecting
+53206035 state listening
+53206742 state speaking
+53206744 reply_audio_start source=model
+53208114 state listening
+53211029 state speaking
+53211032 reply_audio_start source=model
+53219844 state listening

@@ -1,0 +1,7 @@
+52549937 assist_start test=true
+52550004 ws_open 
+52550152 state connecting
+52551463 state listening
+52552447 state speaking
+52552453 reply_audio_start source=model
+52554075 state listening

@@ -1,0 +1,30 @@
+52753975 assist_start test=true
+52754048 ws_open 
+52754051 state connecting
+52754945 state listening
+52755705 state speaking
+52755706 reply_audio_start source=model
+52757030 state listening
+52759131 mic_clip_queued name=q_long trigger=now delay=0
+52759139 mic_clip_start name=q_long
+52759222 mic_clip_queued name=interrupt_stop trigger=speaking delay=1500
+52759389 local_speech_start 
+52764104 local_turn_end speech_ms=4672
+52764106 filler_start 
+52764225 local_cut_in p=1.00 rms=1148
+52766420 mic_clip_end name=q_long
+52766665 local_turn_end speech_ms=2240
+52768184 state speaking
+52768185 reply_audio_start source=model
+52769699 mic_clip_start name=interrupt_stop
+52769790 local_cut_in p=1.00 rms=3088
+52769879 server_flush 
+52769886 state listening
+52770784 local_turn_end speech_ms=896
+52770786 filler_start 
+52770909 local_cut_in p=1.00 rms=1481
+52772780 mic_clip_end name=interrupt_stop
+52773022 local_turn_end speech_ms=2016
+52774181 state speaking
+52774182 reply_audio_start source=model
+52775206 state listening

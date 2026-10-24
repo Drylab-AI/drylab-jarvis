@@ -1,0 +1,12 @@
+52784097 assist_start test=true
+52784178 ws_open 
+52784179 state connecting
+52785084 state listening
+52785680 state speaking
+52785681 reply_audio_start source=model
+52787161 state listening
+52788694 local_speech_start 
+52789335 local_turn_end speech_ms=512
+52789913 state speaking
+52789915 reply_audio_start source=model
+52798843 state listening

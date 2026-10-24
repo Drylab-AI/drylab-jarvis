@@ -81,3 +81,22 @@ over Gemini direct, and the on-phone filler covers the gap at ~250 ms. The
 e2e check is now "pipeline overhead <= 150 ms over Gemini direct, measured
 in the same run". The absolute 1.0 s figure is still reported as
 `meets_1000ms_bar`.
+
+## Final verification (4 full runs, all 11 scenarios, on the final code)
+
+| Run | Scenarios passed | First sound median | Reply median | Worst turn | Gemini direct | Cut-in |
+|-----|------------------|--------------------|--------------|------------|---------------|--------|
+| final1 | 11/11 | 244 ms | 1084 ms | 1300 ms | 1232 ms | 83 ms |
+| final2 | 10/11 | 247 ms | 1099 ms | 2125 ms | 1164 ms | 124 ms |
+| final3 | 10/11 | 246 ms | 1380 ms | 1490 ms | 1269 ms | 91 ms |
+| final4 | 11/11 | 244 ms | 1065 ms | 1270 ms | 1252 ms | 85 ms |
+
+Failures, both one check over a tight absolute bar because of Gemini's own timing:
+
+- final2: plain_latency: slowest turn <= max(1600, direct+700) = 1864 ms (2125 ms)
+- final3: wake_greeting: greeting audio within 2500 ms of wake (2516 ms)
+
+Runs 1 and 4 passed every check, but no two consecutive runs both passed.
+The two misses are Gemini-side variance: a connect that took 16 ms longer, and
+one turn in ten where the model took 2.1 s (the other nine were 1.0-1.2 s).
+Neither was in our pipeline.

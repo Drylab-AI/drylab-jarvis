@@ -1,0 +1,430 @@
+[
+  {
+    "scenario": "wake_greeting",
+    "ok": false,
+    "error": "",
+    "checks": [
+      {
+        "name": "wake word fired on 'hey jarvis'",
+        "ok": true,
+        "detail": ""
+      },
+      {
+        "name": "assistant opened from the wake word",
+        "ok": true,
+        "detail": ""
+      },
+      {
+        "name": "greeting audio within 2500 ms of wake",
+        "ok": false,
+        "detail": "2516 ms"
+      }
+    ],
+    "numbers": {
+      "greet_ms": 2516,
+      "harness_to_greet_ms": 3363
+    },
+    "evidence": [
+      "tests/logs/interaction/evidence/final3/wake_greeting/timeline.txt"
+    ]
+  },
+  {
+    "scenario": "plain_latency",
+    "ok": true,
+    "error": "",
+    "checks": [
+      {
+        "name": "every turn got a spoken reply",
+        "ok": true,
+        "detail": "10/10"
+      },
+      {
+        "name": "first sound median <= 350 ms (perceived response)",
+        "ok": true,
+        "detail": "246 ms"
+      },
+      {
+        "name": "our pipeline adds <= 150 ms over Gemini direct",
+        "ok": true,
+        "detail": "111 ms (direct 1269 ms)"
+      },
+      {
+        "name": "slowest turn <= max(1600, direct+700) = 1969 ms",
+        "ok": true,
+        "detail": "1490 ms"
+      }
+    ],
+    "numbers": {
+      "per_turn_model_ms": [
+        1413,
+        1441,
+        1490,
+        1326,
+        1287,
+        1253,
+        1348,
+        1449,
+        1460,
+        1263
+      ],
+      "per_turn_first_sound_ms": [
+        291,
+        246,
+        251,
+        245,
+        241,
+        248,
+        244,
+        169,
+        246,
+        249
+      ],
+      "model_n": 10,
+      "model_median_ms": 1380,
+      "model_p90_ms": 1460,
+      "model_max_ms": 1490,
+      "model_min_ms": 1253,
+      "first_sound_n": 10,
+      "first_sound_median_ms": 246,
+      "first_sound_p90_ms": 251,
+      "first_sound_max_ms": 291,
+      "first_sound_min_ms": 169,
+      "meets_1000ms_bar": false,
+      "gemini_direct_median_ms": 1269,
+      "gemini_direct_before_after_ms": [
+        1349,
+        1189
+      ],
+      "pipeline_overhead_ms": 111
+    },
+    "evidence": [
+      "tests/logs/interaction/evidence/final3/plain_latency/timeline.txt"
+    ]
+  },
+  {
+    "scenario": "filler",
+    "ok": true,
+    "error": "",
+    "checks": [
+      {
+        "name": "filler within 350 ms whenever the model took >300 ms",
+        "ok": true,
+        "detail": "[248, 251, 243]"
+      },
+      {
+        "name": "filler cut within 100 ms of real audio",
+        "ok": true,
+        "detail": "[0, 0, 0]"
+      },
+      {
+        "name": "at most one filler per turn",
+        "ok": true,
+        "detail": ""
+      },
+      {
+        "name": "no filler after 'yes' / 'stop'",
+        "ok": true,
+        "detail": "[None, None]"
+      }
+    ],
+    "numbers": {
+      "turns": [
+        {
+          "clip": "q_moon",
+          "end_ms": 52695367,
+          "filler_ms": 248,
+          "model_ms": 1482,
+          "filler_cut_ms": 0
+        },
+        {
+          "clip": "q_tall",
+          "end_ms": 52708526,
+          "filler_ms": 251,
+          "model_ms": 1332,
+          "filler_cut_ms": 0
+        },
+        {
+          "clip": "q_ocean",
+          "end_ms": 52719207,
+          "filler_ms": 243,
+          "model_ms": 1207,
+          "filler_cut_ms": 0
+        }
+      ],
+      "short_turns": [
+        {
+          "clip": "yes",
+          "end_ms": 52728207,
+          "filler_ms": null,
+          "model_ms": 1446,
+          "filler_cut_ms": null
+        },
+        {
+          "clip": "stop",
+          "end_ms": 52733806,
+          "filler_ms": null,
+          "model_ms": 1313,
+          "filler_cut_ms": null
+        }
+      ]
+    },
+    "evidence": [
+      "tests/logs/interaction/evidence/final3/filler/timeline.txt"
+    ]
+  },
+  {
+    "scenario": "cut_in",
+    "ok": true,
+    "error": "",
+    "checks": [
+      {
+        "name": "Jarvis was talking when the user cut in",
+        "ok": true,
+        "detail": ""
+      },
+      {
+        "name": "playback stopped within 150 ms of the user speaking",
+        "ok": true,
+        "detail": "91 ms via local_cut_in"
+      },
+      {
+        "name": "Jarvis then answered the new question (2+2)",
+        "ok": true,
+        "detail": "nd craved the smell of freshly baked bread. with claws not meant for kneading, he gently learned to fold yeast wait, stop. actually, what is 2 + 2? that's four."
+      }
+    ],
+    "numbers": {
+      "cut_in_ms": 91,
+      "cut_in_by": "local_cut_in"
+    },
+    "evidence": [
+      "tests/logs/interaction/evidence/final3/cut_in/timeline.txt"
+    ]
+  },
+  {
+    "scenario": "no_self_interrupt",
+    "ok": true,
+    "error": "",
+    "checks": [
+      {
+        "name": "question delivered",
+        "ok": true,
+        "detail": "HTTP 200"
+      },
+      {
+        "name": "Jarvis started answering out loud",
+        "ok": true,
+        "detail": ""
+      },
+      {
+        "name": "answer lasted a while (>= 6 s)",
+        "ok": true,
+        "detail": "8928 ms"
+      },
+      {
+        "name": "zero self-interruptions from its own voice",
+        "ok": true,
+        "detail": ""
+      }
+    ],
+    "numbers": {
+      "reply_span_ms": 8928,
+      "self_cut_ins": 0
+    },
+    "evidence": [
+      "tests/logs/interaction/evidence/final3/no_self_interrupt/timeline.txt"
+    ]
+  },
+  {
+    "scenario": "non_blocking_tool",
+    "ok": true,
+    "error": "",
+    "checks": [
+      {
+        "name": "chart popped up on the phone",
+        "ok": true,
+        "detail": ""
+      },
+      {
+        "name": "answer has the right digit count (91)",
+        "ok": true,
+        "detail": "re thing, let me work on that. [running: calculate 2^300 and its digits, and plot a sine wave.] two to the power of three hundred has ninety-one digits, and your sine wave plot is ready on the screen."
+      },
+      {
+        "name": "Jarvis spoke while the tool was running",
+        "ok": true,
+        "detail": ""
+      }
+    ],
+    "numbers": {
+      "transcript_tail": "re thing, let me work on that. [running: calculate 2^300 and its digits, and plot a sine wave.] two to the power of three hundred has ninety-one digits, and your sine wave plot is ready on the screen."
+    },
+    "evidence": [
+      "tests/logs/interaction/evidence/screens/non_blocking_tool.png",
+      "tests/logs/interaction/evidence/final3/non_blocking_tool/timeline.txt"
+    ]
+  },
+  {
+    "scenario": "camera_to_pc",
+    "ok": true,
+    "error": "",
+    "checks": [
+      {
+        "name": "camera turned on by voice",
+        "ok": true,
+        "detail": ""
+      },
+      {
+        "name": "server started a PC camera session",
+        "ok": true,
+        "detail": "assist-20261024T063418Z-236aa7"
+      },
+      {
+        "name": "PC live view /cam/live >= 8 fps",
+        "ok": true,
+        "detail": "10.6 fps"
+      },
+      {
+        "name": "Gemini still gets <= 1 fps",
+        "ok": true,
+        "detail": "1.00 fps"
+      },
+      {
+        "name": "PC viewer page rendered (headless screenshot)",
+        "ok": true,
+        "detail": "tests/logs/interaction/evidence/screens/pc_cam_view.png"
+      },
+      {
+        "name": "camera turned off by voice",
+        "ok": true,
+        "detail": ""
+      },
+      {
+        "name": "an mp4 of the assistant camera was saved",
+        "ok": true,
+        "detail": "8.2 s"
+      },
+      {
+        "name": "exactly one recording per camera open (no ghost session)",
+        "ok": true,
+        "detail": "1 new mp4s"
+      }
+    ],
+    "numbers": {
+      "pc_live_fps": 10.6,
+      "gemini_fps": 1.0,
+      "mp4_seconds": 8.2
+    },
+    "evidence": [
+      "tests/logs/interaction/evidence/screens/pc_cam_view.png",
+      "recordings/2026-10-24/assist-20261024T063418Z-236aa7_assistant_cam.mp4",
+      "tests/logs/interaction/evidence/final3/camera_to_pc/timeline.txt"
+    ]
+  },
+  {
+    "scenario": "camera_conflict",
+    "ok": true,
+    "error": "",
+    "checks": [
+      {
+        "name": "assistant camera on",
+        "ok": true,
+        "detail": ""
+      },
+      {
+        "name": "Volume-Down camera was refused cleanly",
+        "ok": true,
+        "detail": ""
+      },
+      {
+        "name": "assistant camera kept streaming",
+        "ok": true,
+        "detail": "54 frames in 5 s"
+      }
+    ],
+    "numbers": {},
+    "evidence": [
+      "tests/logs/interaction/evidence/final3/camera_conflict/timeline.txt"
+    ]
+  },
+  {
+    "scenario": "tool_timing",
+    "ok": true,
+    "error": "",
+    "checks": [
+      {
+        "name": "camera bound",
+        "ok": true,
+        "detail": ""
+      },
+      {
+        "name": "'camera is open' was said only after the camera was bound",
+        "ok": true,
+        "detail": "bound=52917352 said=52918028"
+      },
+      {
+        "name": "no stuck 'thinking' state",
+        "ok": true,
+        "detail": ""
+      }
+    ],
+    "numbers": {
+      "tool_cancels": 0
+    },
+    "evidence": [
+      "tests/logs/interaction/evidence/final3/tool_timing/timeline.txt"
+    ]
+  },
+  {
+    "scenario": "fallback_model",
+    "ok": true,
+    "error": "",
+    "checks": [
+      {
+        "name": "server is on the fallback model",
+        "ok": true,
+        "detail": "gemini-2.5-flash-native-audio-preview-12-2025"
+      },
+      {
+        "name": "a basic turn still works",
+        "ok": true,
+        "detail": "5095 ms"
+      }
+    ],
+    "numbers": {
+      "fallback_model_ms": 5095
+    },
+    "evidence": [
+      "tests/logs/interaction/evidence/final3/fallback_model/timeline.txt"
+    ]
+  },
+  {
+    "scenario": "restart_safety",
+    "ok": true,
+    "error": "",
+    "checks": [
+      {
+        "name": "turn before restart",
+        "ok": true,
+        "detail": ""
+      },
+      {
+        "name": "phone reconnected by itself",
+        "ok": true,
+        "detail": ""
+      },
+      {
+        "name": "next turn works after the restart",
+        "ok": true,
+        "detail": ""
+      }
+    ],
+    "numbers": {
+      "reconnects": 0,
+      "after_restart_ms": 1430
+    },
+    "evidence": [
+      "tests/logs/interaction/evidence/final3/restart_safety/timeline.txt"
+    ]
+  }
+]
